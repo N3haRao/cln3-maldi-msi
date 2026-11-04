@@ -4,7 +4,7 @@ Analysis code for MALDI-MSI data of the CLN3 knockout
 mouse brain: which lipids accumulate or get depleted in the KO, and where, with a focus on
 demyelination.
 
-The structure follows my CAJAL tutorial repo (`spatial-lipidomics-project`, notebooks 01-09):
+The structure follows my CAJAL tutorial replication repo (`spatial-lipidomics-project`, notebooks 01-09):
 matrix building, annotation, normalization, anatomy, Moran's I, NMF, territories, differential
 testing. The difference is that every step here is a script with a command-line interface, so
 the same code runs on the laptop and (later) as a SLURM job. A few notebooks are there just to
