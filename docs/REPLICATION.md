@@ -49,8 +49,8 @@ inside it.
 With git:
 
 ```bash
-git clone https://github.com/N3haRao/lipidomics-testbed.git
-cd lipidomics-testbed
+git clone https://github.com/N3haRao/cln3-maldi-msi.git
+cd cln3-maldi-msi
 git checkout <branch or commit to reproduce>
 ```
 
