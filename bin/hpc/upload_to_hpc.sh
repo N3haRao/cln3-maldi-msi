@@ -7,11 +7,9 @@
 # skips files that are already there and identical. The data is ~40 GB; while it copies,
 # `caffeinate` keeps the Mac awake (keep it plugged in, lid open).
 #
-# Only "imzML files for biostats" is uploaded (36 files). The SCiLS projects (.slx/.sbd),
-# .srd/.mca files, SCiLS exports, Pilar's results and the 09SEP26 cerebellum folder stay on
-# the Mac: the analysis doesn't use them.
+# Only "imzML files for biostats" is uploaded (36 files). 
 #
-# Where things go on Ada (HPC_WORK, default ~/cln3_msi = /home/nehar/cln3_msi):
+# Where things go on Ada (HPC_WORK, default ~/cln3_msi = /home/user/cln3_msi):
 #   ~/cln3_msi/repo/                           the code (mirrors this folder)
 #   ~/cln3_msi/data/imzML files for biostats/  the data
 set -euo pipefail
