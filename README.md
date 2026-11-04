@@ -1,6 +1,6 @@
 # CLN3 KO brain MALDI-MSI lipidomics pipeline
 
-Analysis code for Pilar Andrade's (Boeynaems lab, NRI) MALDI-MSI data of the CLN3 knockout
+Analysis code for MALDI-MSI data of the CLN3 knockout
 mouse brain: which lipids accumulate or get depleted in the KO, and where, with a focus on
 demyelination.
 
@@ -79,7 +79,7 @@ Outputs all go under `paths.output_root` (never inside the data folder; the conf
 Needs [Miniforge](https://github.com/conda-forge/miniforge) (gives you `mamba`/`conda`).
 
 ```bash
-cd ~/path/to/lipidomics-testbed
+cd ~/path/to/cln3-maldi-msi
 bash bin/setup_env.sh
 conda activate cln3-msi
 ```
@@ -115,7 +115,7 @@ Open `config.yaml`. The things to check:
 
 | key | what |
 |---|---|
-| `paths.data_root` | `"/Users/neharao/Desktop/BRAIN - PILAR - SPATIAL"` (keep the quotes and the upper case, there are spaces) |
+| `paths.data_root` | `"/Users/user/Desktop/BRAIN - PILAR - SPATIAL"` (keep the quotes and the upper case, there are spaces) |
 | `paths.output_root` | where outputs go. Must not be inside `data_root` |
 | `modes.run` | which modes to process: `[lip_neg, lip_pos, met_neg]` |
 | `qc.slide`, `qc.mode` | the slide/mode phase 02 looks at first (default E, lip_neg) |
@@ -150,7 +150,7 @@ Every phase is `python scripts/<phase>.py --config config.yaml [--mode lip_neg]`
 
 ```bash
 conda activate cln3-msi
-cd ~/path/to/lipidomics-testbed
+cd ~/path/to/cln3-maldi-msi
 
 python scripts/00_setup.py --config config.yaml --download     # once: validate + download/caches
 python scripts/01_inventory.py --config config.yaml            # headers only, a few minutes
@@ -247,8 +247,8 @@ Everything is driven from the Mac terminal by the scripts in `bin/hpc/`:
 | `status.sh` / `fetch_results.sh` | Mac | queue + progress / copy summaries, figures, report back |
 
 ```bash
-cd ~/path/to/lipidomics-testbed
-nano bin/hpc/settings.sh                 # already set for nehar@ada.nri.bcm.edu; change HPC_WORK / partition if needed
+cd ~/path/to/cln3-maldi-msi
+nano bin/hpc/settings.sh                 # change HPC_WORK / partition if needed
 bash bin/hpc/upload_to_hpc.sh            # code + data
 bash bin/hpc/start_on_hpc.sh             # setup + submit everything
 bash bin/hpc/status.sh                   # any time
