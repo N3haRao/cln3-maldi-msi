@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------------------
 
 # How you log in: ssh HPC_USER@HPC_HOST
-HPC_USER="nehar"
+HPC_USER="user"
 HPC_HOST="ada.nri.bcm.edu"
 
 # Work folder on Ada. Needs ~60 GB. No spaces in this path, please.
