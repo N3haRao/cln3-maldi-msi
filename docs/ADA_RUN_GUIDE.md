@@ -1,20 +1,18 @@
 # Running the CLN3 MSI pipeline on Ada: every command, in order
 
 Commands are typed in the **Mac Terminal** unless a step says **on Ada**. You can tell where
-you are from the prompt: on Ada it looks like `nehar@ada:~$`. Lines starting with `#` are
-comments, you don't type them.
+you are from the prompt: on Ada it looks like `user@ada:~$`. 
 
 ## Ada, as checked on your account
 
 | | |
 |---|---|
-| Login | `ssh nehar@ada.nri.bcm.edu` (BCM VPN if off campus) |
+| Login | `ssh user@ada.nri.bcm.edu` |
 | Work folder | `~/cln3_msi` = `/home/nehar/cln3_msi` (`/home` has 25 TB free, no personal quota shown) |
 | SLURM | one partition `defq` (the default), one machine, no time limit, so nothing to set |
 | Conda | shared Anaconda at `/home/anaconda/bin/conda`; our env lives in `~/cln3_msi/envs/cln3-msi` |
 | Internet | yes (downloads work) |
-| Code on the Mac | `/Users/neharao/Downloads/lipidomics-testbed-main` (unzipped GitHub download) |
-| Data on the Mac | `/Users/neharao/Desktop/BRAIN - PILAR - SPATIAL` (same folder as "Brain - Pilar - Spatial") |
+| Code on the Mac | `/path/cln3-maldi-msi` (unzipped GitHub download) |
 
 `bin/hpc/settings.sh` is already set up for all of this, so you don't need to edit it.
 
@@ -29,14 +27,6 @@ Layout on Ada:
   outputs/                       everything the pipeline writes (summaries/, figures/, report/, ...)
   slurm_logs/                    one log per job
 ```
-
-**Only `imzML files for biostats/` gets uploaded.** These all stay on the Mac and aren't used:
-
-- SCiLS projects (`.slx/.sbd`, `raw lip neg/pos`, `raw met neg/`, `Female Data - Pilar analysis/`)
-- the `.srd` and `.mca` files
-- the `export_All_*` files
-- Pilar's results (`Results_CLN3_Analysis*/`, `PC 38.1 - depleted.png`, `.Rhistory`, `.RDataTmp`)
-- the `09SEP26/` cerebellum run
 
 ---
 
@@ -79,8 +69,8 @@ aren't affected. To add HMDB anyway:
 2. Copy it to Ada and load it, from the Mac Terminal:
 
 ```bash
-scp ~/Downloads/structures.zip nehar@ada.nri.bcm.edu:~/cln3_msi/
-ssh nehar@ada.nri.bcm.edu "source ~/cln3_msi/cln3_env.sh && cd ~/cln3_msi/repo && python scripts/00_setup.py --config config.hpc.yaml --hmdb-file ~/cln3_msi/structures.zip | tail -n 5"
+scp ~/Downloads/structures.zip user@ada.nri.bcm.edu:~/cln3_msi/
+ssh user@ada.nri.bcm.edu "source ~/cln3_msi/cln3_env.sh && cd ~/cln3_msi/repo && python scripts/00_setup.py --config config.hpc.yaml --hmdb-file ~/cln3_msi/structures.zip | tail -n 5"
 ```
 
 The summary should now list `hmdb: ... entries with formulas cached`.
@@ -105,7 +95,7 @@ before the big upload.
 ```bash
 cd ~/cln3_msi/repo
 sbatch --output=$HOME/cln3_msi/slurm_logs/test_%j.out bin/hpc/job_test.sbatch
-squeue -u nehar          # PD = waiting, R = running; when it's gone from the list, it finished
+squeue -u user          # PD = waiting, R = running; when it's gone from the list, it finished
 ```
 
 When `squeue -u nehar` no longer lists it:
@@ -120,12 +110,9 @@ If it doesn't say 19/19, send me that log and stop here.
 ### Step 4. Mac: get the latest code and upload the data (the long one)
 
 ```bash
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/upload_to_hpc.sh
 ```
-
-(If I've told you there's a newer version of the code, first replace the folder as described in
-"Getting a newer version of the code" below.)
 
 * **First** it prints `Local data: 36 imzML/ibd files (expected 36)` and the free space on Ada.
 * **Then** it uploads the code (seconds), then the data with a progress line per file (~40 GB).
@@ -158,18 +145,18 @@ modes have to queue, see step 2).
 ### Step 6. Mac: check progress (any time)
 
 ```bash
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/status.sh
 ```
 
 It lists the jobs still queued or running, the phase summaries written so far, and the logs of
 any job that hit an error.
 
-More detail **on Ada** (`ssh nehar@ada.nri.bcm.edu` first):
+More detail **on Ada** (`ssh user@ada.nri.bcm.edu` first):
 
 ```bash
-squeue -u nehar                                                          # queued / running
-sacct -u nehar -S today --format=JobID,JobName%22,State,Elapsed,MaxRSS   # finished + how it went
+squeue -u user                                                          # queued / running
+sacct -u user -S today --format=JobID,JobName%22,State,Elapsed,MaxRSS   # finished + how it went
 ls -t ~/cln3_msi/slurm_logs | head                                       # newest logs
 tail -n 50 ~/cln3_msi/slurm_logs/<log name>.out                            # read one
 scancel -u nehar                                                         # stop everything (only if needed)
@@ -183,32 +170,20 @@ scancel -u nehar                                                         # stop 
 ### Step 7. Mac: get the results
 
 ```bash
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/fetch_results.sh
 open ~/cln3_msi_outputs_from_ada/report/report.html
 ```
 
 This copies the summaries, figures, tables, logs and the report to
 `~/cln3_msi_outputs_from_ada`. The big data tables stay on Ada.
-
-**Look at this first yourself:**
-`~/cln3_msi_outputs_from_ada/figures/03_qc_all/lip_neg/sections_all.png`. On every slide the
-**Control** animal should be on the **upper** section.
-
-**Then send me:**
-
-* `summaries/01_inventory_*.md`
-* `summaries/02_qc_lip_neg.md`
-* `summaries/03_qc_all_*.md`
-* the `.out` log of any failed job (in `~/cln3_msi_outputs_from_ada/slurm_logs/`)
-
 ---
 
-## Later: after I change the code, or to rerun part of it
+## After code changes
 
 ```bash
 # first get the newer code onto the Mac (see "Getting a newer version of the code" below), then:
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/upload_to_hpc.sh --code      # code only; the data is already on Ada
 FROM=05 bash bin/hpc/start_on_hpc.sh      # rerun from phase 05, reusing 01-04
 ```
@@ -221,14 +196,14 @@ identical to the Mac's, so edits made directly on Ada get overwritten.
 
 ## Getting a newer version of the code (ZIP download, no git needed)
 
-1. On GitHub, open https://github.com/N3haRao/lipidomics-testbed, make sure the branch menu
+1. On GitHub, open https://github.com/N3haRao/cln3-maldi-msi.git, make sure the branch menu
    says `main`, then Code > Download ZIP.
-2. In Finder, delete (or rename) the old `Downloads/lipidomics-testbed-main` folder and unzip
+2. In Finder, delete (or rename) the old `path/cln3-maldi-msi` folder and unzip
    the new one in its place. It unzips to the same name.
 3. Upload the code:
 
 ```bash
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/upload_to_hpc.sh --code
 ```
 
@@ -239,11 +214,11 @@ anything there, make the same change again in the new folder before uploading.
 
 ```bash
 # Mac: download the ZIP as above into Downloads and unzip it, then
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/upload_to_hpc.sh --code
 
 # Ada
-ssh nehar@ada.nri.bcm.edu       # first time: type "yes" to the fingerprint question, then your password
+ssh user@ada.nri.bcm.edu       # first time: type "yes" to the fingerprint question, then your password
 cd ~/cln3_msi/repo
 bash bin/hpc/hpc_setup.sh
 exit
@@ -255,10 +230,10 @@ Optional, so you don't type the Ada password every time (Mac):
 
 ```bash
 ls ~/.ssh/id_ed25519.pub 2>/dev/null || ssh-keygen -t ed25519    # press Enter 3 times
-ssh-copy-id nehar@ada.nri.bcm.edu                                 # Ada password, one last time
+ssh-copy-id user@ada.nri.bcm.edu                                 # Ada password, one last time
 ```
 
-## Running as another user (for example, a colleague replicating the analysis)
+## Running as another user 
 
 A second person can run the whole pipeline under their own Ada account, reading the data
 straight from `/home/nehar/cln3_msi/data` (no second 40 GB copy) and writing everything to
@@ -292,8 +267,8 @@ read unpublished data. Check from the colleague's account with
 ```bash
 ssh <user>@ada.nri.bcm.edu
 mkdir -p ~/cln3_msi && cd ~/cln3_msi
-git clone https://github.com/N3haRao/lipidomics-testbed.git repo
-cd repo && git checkout claude/hopeful-ride-f4pcg6     # or the commit/branch to reproduce
+git clone https://github.com/N3haRao/cln3-maldi-msi.git repo
+cd repo && git checkout main     # or the commit/branch to reproduce
 ```
 
 Without git: `curl -L -o code.zip <ZIP link of the branch on GitHub>`, `unzip code.zip`, and
@@ -337,8 +312,8 @@ To only look at Neha's existing results without rerunning anything, step 1 is en
 | `ssh: ... timed out` | connect to the BCM VPN, try again |
 | `Permission denied` on ssh | wrong password or account issue: BCM HPC support |
 | `Not found: .../imzML files for biostats` | `LOCAL_DATA_ROOT` in `bin/hpc/settings.sh` is wrong |
-| `hpc_setup.sh` stops at `conda create` or `pip install` | send me the last 30 lines |
-| the fake-data test isn't 19/19 | send me `~/cln3_msi/slurm_logs/test_*.out` |
+| `hpc_setup.sh` stops at `conda create` or `pip install` | check the last 30 lines |
+| the fake-data test isn't 19/19 | check `~/cln3_msi/slurm_logs/test_*.out` |
 | a job ends in `TIMEOUT` | raise its value on the `TIME=` line of `bin/hpc/submit_all.sh`, upload `--code`, rerun with `FROM=` that phase |
 | a job ends in `OUT_OF_MEMORY` | change `--mem=32G` to `64G` in `bin/hpc/job_phase.sbatch`, upload `--code`, rerun with `FROM=` |
 | anything else | send me the job's `.out` log and the newest file in `~/cln3_msi_outputs_from_ada/logs/` |
@@ -356,7 +331,7 @@ tail -n 25 $(ls -t ~/cln3_msi/slurm_logs/test_*.out | head -1)
 exit
 
 # ---- on the Mac ----
-cd /Users/neharao/Downloads/lipidomics-testbed-main
+cd path/cln3-maldi-msi
 bash bin/hpc/upload_to_hpc.sh
 bash bin/hpc/start_on_hpc.sh
 bash bin/hpc/status.sh
