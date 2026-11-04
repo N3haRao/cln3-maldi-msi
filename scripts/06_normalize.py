@@ -114,7 +114,7 @@ def run_umaia(X, obs, cfg, log):
         return np.clip(out, 0, None)
     except Exception as e:
         log.warning(f"uMAIA failed ({e}); continuing without it. Its API may differ from the tutorial "
-                    "version this was written for; send me the error.")
+                    "version this was written for")
         return None
 
 
@@ -229,7 +229,7 @@ def main():
         S.table(cmp.round(3))
         best = cmp[cmp.method != "raw"].sort_values("median slide partial R2").iloc[0]["method"]
         S.p(f"Used for statistics: **{use}** (fixed in the config). Lowest slide effect here: {best}. "
-            "If they differ a lot, tell me before running 09; we shouldn't switch after seeing results.")
+            )
         S.p("Note: with Control always on top and Mutant always on the bottom, no per-pixel "
             "normalization can remove a top-to-bottom technical trend; see the 03 gradient check.")
         S.kv({"pixels": out.n_obs, "peaks": out.n_vars, "embedding batch correction (plots only)": emb})
