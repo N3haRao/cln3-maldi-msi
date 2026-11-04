@@ -24,7 +24,7 @@ Contents
 
 | | |
 |---|---|
-| Data | the folder `imzML files for biostats/` from the shared drive (36 files: 6 slides × 3 modes, one `.imzML` and one `.ibd` each, about 40 GB). It is **not** in this repository: it is unpublished collaborator data. |
+| Data | the folder `imzML files for biostats/` from Ada (36 files: 6 slides × 3 modes, one `.imzML` and one `.ibd` each, about 40 GB). It is **not** in this repository: it is unpublished collaborator data. |
 | Sample sheet | `metadata/sample_sheet.csv` (in the repository) |
 | Software | [Miniforge](https://github.com/conda-forge/miniforge) (conda/mamba). Everything else is installed from `environment.yml` / `requirements.txt`. |
 | Internet | once, for phase 00 to download LIPID MAPS, HMDB and the Allen atlas. After that the pipeline runs offline. |
