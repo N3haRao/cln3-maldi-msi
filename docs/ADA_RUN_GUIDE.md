@@ -98,7 +98,7 @@ sbatch --output=$HOME/cln3_msi/slurm_logs/test_%j.out bin/hpc/job_test.sbatch
 squeue -u user          # PD = waiting, R = running; when it's gone from the list, it finished
 ```
 
-When `squeue -u nehar` no longer lists it:
+When `squeue -u user` no longer lists it:
 
 ```bash
 tail -n 25 $(ls -t ~/cln3_msi/slurm_logs/test_*.out | head -1)      # want the last line: "19/19 checks passed"
@@ -159,7 +159,7 @@ squeue -u user                                                          # queued
 sacct -u user -S today --format=JobID,JobName%22,State,Elapsed,MaxRSS   # finished + how it went
 ls -t ~/cln3_msi/slurm_logs | head                                       # newest logs
 tail -n 50 ~/cln3_msi/slurm_logs/<log name>.out                            # read one
-scancel -u nehar                                                         # stop everything (only if needed)
+scancel -u user                                                         # stop everything (only if needed)
 ```
 
 * `COMPLETED` = fine.
@@ -326,7 +326,7 @@ ls ~/cln3_msi/cln3_env.sh ~/cln3_msi/outputs/cache
 nproc; free -g | head -2
 cd ~/cln3_msi/repo
 sbatch --output=$HOME/cln3_msi/slurm_logs/test_%j.out bin/hpc/job_test.sbatch
-squeue -u nehar
+squeue -u user
 tail -n 25 $(ls -t ~/cln3_msi/slurm_logs/test_*.out | head -1)
 exit
 
