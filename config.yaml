@@ -14,15 +14,15 @@ project:
 paths:
   # The folder that CONTAINS "imzML files for biostats". On the shared drive it's called
   # "BRAIN - PILAR - SPATIAL". Examples (pick the one for the machine you run on):
-  #   Mac, copied to the Desktop:   "/Users/neharao/Desktop/BRAIN - PILAR - SPATIAL"
+  #   Mac, copied to the Desktop:   "/Users/user-name/Desktop/BRAIN - PILAR - SPATIAL"
   #   Mac, straight from the drive: "/Volumes/<drive name>/BRAIN - PILAR - SPATIAL"
   #   Windows:                      "D:/BRAIN - PILAR - SPATIAL"   (forward slashes are fine)
   # Only the imzML subfolder is read (plus the SCiLS exports if scils_crosscheck is on).
   # Nothing is ever written here. Keep the exact upper case: the Mac doesn't care, a Linux/HPC
   # filesystem does.
-  data_root: "/Users/neharao/Desktop/BRAIN - PILAR - SPATIAL"
+  data_root: "/Users/user-name/Desktop/BRAIN - PILAR - SPATIAL"
   imzml_subdir: "imzML files for biostats"
-  output_root: "/Users/neharao/cln3_msi_outputs"      # everything the pipeline writes goes here
+  output_root: "/Users/user-name/cln3_msi_outputs"      # everything the pipeline writes goes here
   cache_root: null                   # null means <output_root>/cache (LIPID MAPS, HMDB, atlas)
   sample_sheet: "metadata/sample_sheet.csv"           # relative paths are relative to the repo
 
