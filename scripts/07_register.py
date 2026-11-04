@@ -12,7 +12,7 @@ Per mode and per section (12 per mode):
   * fallback (always computed): white vs grey matter from the guide image itself
 
 Bregma to CCF is approximate (registration.bregma_ccf_ap_mm). The AP level that fits best is
-reported per section; if all 12 sections land at very different levels, tell me.
+reported per section; if all 12 sections land at very different levels, make a note.
 
 Writes processed/<mode>/regions.parquet (one row per pixel of matrix_norm.h5ad, boolean
 region columns), results/07_register/<mode>/registration.csv, overlays, summary.
