@@ -7,7 +7,7 @@ know how the exports are laid out, so this script first LOOKS at the file and pr
 it finds (separator, comment lines, columns, first rows), then tries two layouts:
   a) features in COLUMNS: column headers that parse as numbers in the mode's m/z range
   b) features in ROWS: a column called something like "m/z" with numbers in range
-If neither works, it says so and shows you the preview, so you can tell me the layout.
+If neither works, it says so and shows you the preview, so you can check the layout.
 
 Only the header and the first scils_crosscheck.preview_rows rows are read (plus the m/z
 column in layout b), so a multi-GB export is fine.
@@ -133,7 +133,7 @@ def main():
         S.h("Layout guess")
         if scils_mz is None:
             S.warn("couldn't find m/z values (neither numeric column headers nor an m/z column). "
-                   f"Look at {prev.relative_to(ctx.output_root)} and tell me the layout.", log)
+                   f"Look at {prev.relative_to(ctx.output_root)} and adjust the reader to that layout.", log)
             S.p("```\n" + "\n".join(preview_txt[:15]) + "\n```")
             S.write()
             continue
