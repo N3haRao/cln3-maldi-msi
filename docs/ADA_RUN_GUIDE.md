@@ -105,7 +105,7 @@ tail -n 25 $(ls -t ~/cln3_msi/slurm_logs/test_*.out | head -1)      # want the l
 exit                                            # leave Ada, back to the Mac
 ```
 
-If it doesn't say 19/19, send me that log and stop here.
+
 
 ### Step 4. Mac: get the latest code and upload the data (the long one)
 
@@ -316,7 +316,7 @@ To only look at Neha's existing results without rerunning anything, step 1 is en
 | the fake-data test isn't 19/19 | check `~/cln3_msi/slurm_logs/test_*.out` |
 | a job ends in `TIMEOUT` | raise its value on the `TIME=` line of `bin/hpc/submit_all.sh`, upload `--code`, rerun with `FROM=` that phase |
 | a job ends in `OUT_OF_MEMORY` | change `--mem=32G` to `64G` in `bin/hpc/job_phase.sbatch`, upload `--code`, rerun with `FROM=` |
-| anything else | send me the job's `.out` log and the newest file in `~/cln3_msi_outputs_from_ada/logs/` |
+
 
 ## All remaining commands in one block
 
