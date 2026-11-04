@@ -1,7 +1,7 @@
 """Short per-phase summaries (markdown) and helpers for figures.
 
 Every phase ends with summary.write(), which puts a markdown file in
-<output_root>/summaries/<phase>_<mode>.md. Those are the files to paste back to me.
+<output_root>/summaries/<phase>_<mode>.md. Those are the files to check out.
 They list key numbers, warnings, and the figures written.
 """
 from __future__ import annotations
