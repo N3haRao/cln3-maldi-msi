@@ -34,7 +34,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli  # noqa: E402
+from cln3msi import cli, figstyle  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
 
 
@@ -114,7 +114,7 @@ def run_umaia(X, obs, cfg, log):
         return np.clip(out, 0, None)
     except Exception as e:
         log.warning(f"uMAIA failed ({e}); continuing without it. Its API may differ from the tutorial "
-                    "version this was written for")
+                    "version this was written for.")
         return None
 
 
@@ -168,32 +168,57 @@ def main():
         cmp.to_csv(ctx.out("results", "06_normalize", mode, "method_comparison.csv"), index=False)
 
         # figures: section PCA before/after, size factors per section
-        fig, axes = plt.subplots(1, len(pcs), figsize=(3.2 * len(pcs), 3.2), squeeze=False)
+        fig, axes = plt.subplots(1, len(pcs), figsize=(2.9 * len(pcs) + 1.2, 3.0), squeeze=False,
+                                 gridspec_kw={"wspace": 0.25})
         slides = sorted(a.obs["slide"].unique())
-        cmap = plt.get_cmap("tab10")
+        cmap = lambda k: figstyle.OKABE_ITO[k % len(figstyle.OKABE_ITO)]  # noqa: E731
         for ax, (name, (idx, pc)) in zip(axes[0], pcs.items()):
             info = sec_info.loc[idx]
             for k, s in enumerate(slides):
                 for g, mk in ((ctx.cfg["project"]["genotypes"]["control"], "o"),
                               (ctx.cfg["project"]["genotypes"]["mutant"], "^")):
                     sel = ((info["slide"] == s) & (info["genotype"] == g)).to_numpy()
-                    ax.scatter(pc[sel, 0], pc[sel, 1], color=cmap(k), marker=mk, s=40,
-                               label=s if g == ctx.cfg["project"]["genotypes"]["control"] else None)
+                    ax.scatter(pc[sel, 0], pc[sel, 1], color=cmap(k), marker=mk, s=34, edgecolors="0.2", linewidths=0.4,
+                               label=f"Slide {s}" if g == ctx.cfg["project"]["genotypes"]["control"] else None)
             r2v = cmp.set_index("method").loc[name, "median slide partial R2"]
-            ax.set_title(f"{name}\nslide partial R2 {r2v:.2f}", fontsize=9)
+            ax.set_title(f"{name.upper() if len(name) <= 4 else name.capitalize()} normalization\n"
+                         f"median slide partial R\u00b2 = {r2v:.2f}", fontsize=8)
+            ax.set_xlabel("PC1"); ax.set_ylabel("PC2")  # noqa: E702
             ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
-        axes[0, 0].legend(fontsize=6, title="slide (o Control, ^ KO)", title_fontsize=6, loc="upper right")
-        fig.suptitle(f"{mode}: PCA of section mean profiles (colour = slide)", fontsize=10)
-        S.fig(fig, "slide_effect_pca.png")
+        from matplotlib.lines import Line2D
+        h = [Line2D([], [], ls="", marker="o", color=cmap(k), label=f"Slide {s}") for k, s in enumerate(slides)]
+        h += [Line2D([], [], ls="", marker="o", mfc="none", color="0.2", label="Control"),
+              Line2D([], [], ls="", marker="^", mfc="none", color="0.2", label="CLN3 KO")]
+        axes[0, -1].legend(handles=h, loc="upper left", bbox_to_anchor=(1.02, 1.0))
+        figstyle.panel_labels(axes[0], x=-0.08)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: slide effect under each normalization")
+        S.fig(fig, "slide_effect_pca.png", caption=(
+            "Principal component analysis of the section-mean profiles (one point per animal) under each normalization "
+            "(colour, slide; circles, Control; triangles, CLN3 KO). Partial R\u00b2 is the share of each peak's "
+            "between-section variance explained by slide, after genotype; sections clustering by slide show the "
+            "slide (batch) effect that the paired, within-slide analysis removes."))
 
-        fig, axes = plt.subplots(1, len(N["methods"]), figsize=(4 * len(N["methods"]), 3), squeeze=False)
+        fig, axes = plt.subplots(1, len(N["methods"]), figsize=(3.4 * len(N["methods"]), 2.9), squeeze=False,
+                                 sharey=False, gridspec_kw={"wspace": 0.3})
         key = a.obs["slide"].astype(str) + " " + a.obs["section"].str[0]
         for ax, m in zip(axes[0], N["methods"]):
             groups = sorted(key.unique())
-            ax.boxplot([np.log2(f[m][(key == g).to_numpy()]) for g in groups], showfliers=False)
-            ax.set_xticks(range(1, len(groups) + 1), groups, rotation=90, fontsize=7)
-            ax.set_title(f"log2 size factor: {m}", fontsize=9)
-        S.fig(fig, "size_factors.png")
+            bp = ax.boxplot([np.log2(f[m][(key == g).to_numpy()]) for g in groups], showfliers=False, patch_artist=True,
+                            widths=0.6, medianprops={"color": "k", "lw": 0.8})
+            for patch, g in zip(bp["boxes"], groups):
+                patch.set_facecolor(figstyle.TOP if g.endswith("T") else figstyle.BOTTOM)
+                patch.set_alpha(0.6); patch.set_linewidth(0.6)  # noqa: E702
+            ax.set_xticks(range(1, len(groups) + 1), groups, rotation=90)
+            ax.set_title(f"{m.upper() if len(m) <= 4 else m.capitalize()} normalization")
+            ax.set_ylabel("log2 size factor per pixel")
+            ax.set_xlabel("Section (T = Top, B = Bottom)")
+        figstyle.panel_labels(axes[0], x=-0.2)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: normalization size factors")
+        S.fig(fig, "size_factors.png", caption=(
+            "Distribution of per-pixel size factors (log2) in each section for each normalization method; boxes "
+            "show the interquartile range and median, whiskers 1.5 times the interquartile range (outliers not "
+            "shown). Blue, Top (Control) sections; vermillion, Bottom (CLN3 KO) sections. Statistics use "
+            f"{N.get('for_stats', 'tic').upper()} normalization."))
 
         # write the normalized object: X = method for stats
         use = N.get("for_stats", "tic")
@@ -229,7 +254,7 @@ def main():
         S.table(cmp.round(3))
         best = cmp[cmp.method != "raw"].sort_values("median slide partial R2").iloc[0]["method"]
         S.p(f"Used for statistics: **{use}** (fixed in the config). Lowest slide effect here: {best}. "
-            )
+            "If they differ a lot, decide before running 09; switching after seeing results would bias them.")
         S.p("Note: with Control always on top and Mutant always on the bottom, no per-pixel "
             "normalization can remove a top-to-bottom technical trend; see the 03 gradient check.")
         S.kv({"pixels": out.n_obs, "peaks": out.n_vars, "embedding batch correction (plots only)": emb})
