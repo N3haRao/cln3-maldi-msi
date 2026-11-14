@@ -1,37 +1,60 @@
 # CLN3 KO brain MALDI-MSI lipidomics pipeline
 
-Analysis code for MALDI-MSI data of the CLN3 knockout
-mouse brain: which lipids accumulate or get depleted in the KO, and where, with a focus on
-demyelination.
+Analysis code for MALDI mass spectrometry imaging (MALDI-MSI) data of the CLN3 knockout mouse
+brain: which lipids accumulate or are depleted in the knockout, and where, with a focus on
+myelin. Twelve animals (6 knockout, 6 Control), one coronal section each, two sections per
+slide, three ion modes.
 
-The structure follows my CAJAL tutorial replication repo (`spatial-lipidomics-project`, notebooks 01-09):
-matrix building, annotation, normalization, anatomy, Moran's I, NMF, territories, differential
-testing. The difference is that every step here is a script with a command-line interface, so
-the same code runs on the laptop and (later) as a SLURM job. A few notebooks are there just to
-look at the figures.
+Every step is a script with a command-line interface, so the same code runs on a laptop and
+as SLURM jobs on a cluster. Every path and parameter lives in one file, `config.yaml`.
 
-> Unpublished collaborator data. Nothing in this repo uploads anything. The only network access
-> is the one-time download in `00_setup.py --download` (LIPID MAPS, HMDB, Allen atlas). The
-> imaging data are not in this repository.
+> **Data policy.** The imaging data are **not** in this repository. Nothing
+> in this code uploads data anywhere. The only network access is the one-time download of
+> public reference databases in `00_setup.py --download` (LIPID MAPS, HMDB, SwissLipids, the
+> Allen Mouse Brain Atlas). The raw data folder is only ever read; the code refuses to write
+> inside it.
 
 ## Documentation
 
 | document | for |
 |---|---|
+| this README | quick start on a Mac, repository layout, configuration keys, phase overview, troubleshooting |
 | [`docs/METHODS.md`](docs/METHODS.md) | study design, every processing step, and which statistical tests are used and why |
-| [`docs/REPLICATION.md`](docs/REPLICATION.md) | rerunning the analysis from the raw files, checking a rerun matches, which phase to rerun after a config change, and a guide to the result tables |
-| [`docs/ADA_RUN_GUIDE.md`](docs/ADA_RUN_GUIDE.md) | the same on the Ada cluster, every command from the ssh login on |
-| this README | repository layout, configuration keys, phase overview, troubleshooting |
+| [`docs/REPLICATION.md`](docs/REPLICATION.md) | rerunning the analysis from the raw files, checking that a rerun matches, which phase to rerun after a config change, and a guide to the result tables |
+| [`docs/HPC_RUN_GUIDE.md`](docs/HPC_RUN_GUIDE.md) | running everything on a SLURM cluster from the Mac terminal, every command |
 
-## Quick start
+## Quick start (Mac terminal)
+
+All commands are typed in the Terminal app (Applications > Utilities > Terminal). Lines
+starting with `#` are comments.
 
 ```bash
-bash bin/setup_env.sh && conda activate cln3-msi     # environment (once)
-bash bin/run_synthetic_test.sh                        # check the install on fake data: 27/27 checks
-# set paths.data_root and paths.output_root in config.yaml, then:
+# 1. Install Miniforge once (gives you conda/mamba): https://github.com/conda-forge/miniforge
+#    e.g. with Homebrew:  brew install --cask miniforge   then close and reopen the Terminal
+
+# 2. Get the code (or download the ZIP from GitHub: Code > Download ZIP, and unzip it)
+git clone <URL of this repository> cln3-maldi-msi
+cd cln3-maldi-msi
+
+# 3. Create the Python environment (once, 5 to 15 minutes)
+bash bin/setup_env.sh
+conda activate cln3-msi                   # if it asks you to run "conda init": conda init zsh, reopen the Terminal
+                                          # (every new Terminal window: cd into the folder and activate again)
+
+# 4. Check the installation on synthetic data (no real data or internet needed, ~5 minutes)
+bash bin/run_synthetic_test.sh            # the last lines should say "37/37 checks passed"
+
+# 5. Point the config at your data: open config.yaml in any text editor and set
+#    paths.data_root   = the folder that CONTAINS "imzML files for biostats"
+#    paths.output_root = where results should go (anywhere outside data_root)
+open -e config.yaml
+
+# 6. Download the reference databases once, then run every phase
 python scripts/00_setup.py --config config.yaml --download
-bash bin/run_all.sh config.yaml                       # phases 01 to 10
-open "<output_root>/report/report.html"
+bash bin/run_all.sh config.yaml           # phases 01 to 10, stops at the first error
+
+# 7. Look at the results
+open ~/cln3_msi_outputs/report/report.html   # or <output_root>/report/report.html
 ```
 
 Every run records the code fingerprint, config hash and package versions in
@@ -43,16 +66,24 @@ traced to the exact code and settings that produced it.
 ## Repository layout
 
 ```
-config.yaml              every path and parameter (Mac defaults); the only file you normally edit
+config.yaml              every path and parameter; the only file you normally edit
 config.test.yaml         the synthetic test config (inherits config.yaml, overrides a few keys)
+config.flipJ.yaml        sensitivity run with slide J's sections swapped (inherits config.yaml)
+config.hpc*.yaml         the same for a SLURM cluster (paths only, set from bin/hpc/settings.sh)
 environment.yml          conda env, Python 3.11 (pins in requirements.txt)
 requirements-optional.txt   harmonypy, jupyterlab (uMAIA: separate env, see below)
-metadata/sample_sheet.csv   the 12 animals + the imzML file name for each mode
-reference/               lipid class rules, adducts, calibrants, curated metabolites (all as formulas)
+metadata/sample_sheet.csv   the study design: 12 de-identified animals (genotype, sex, slide, Top/Bottom, run)
+                         + imzML file names; see metadata/README.md to use your own IDs
+reference/               lipid class rules, adducts, calibrants, curated metabolites (all as formulas);
+                         lamanno2026/ = mouse-brain lipid evidence from the Lipid Brain Atlas (Nature 2026);
+                         msms_diagnostic_fragments.csv = class fragments for the optional MS/MS check
 src/cln3msi/             the shared code the scripts import
-scripts/00_setup.py ... 10_report.py, 04b_scils_crosscheck.py, make_synthetic_data.py
+scripts/00_setup.py ... 11_compare_runs.py, 04b_scils_crosscheck.py, 09b_lipizones.py, make_synthetic_data.py
+scripts/tools/           build_lamanno_reference.py (rebuilds reference/lamanno2026 from the supplements),
+                         inspect_bruker_d.py (optional, read-only MS/MS check of raw Bruker .d folders)
 notebooks/               review notebooks (they only read outputs, they never recompute)
 bin/                     setup_env.sh, run_phase.sh, run_all.sh, run_synthetic_test.sh
+bin/hpc/                 everything for a SLURM cluster, driven from the Mac (see docs/HPC_RUN_GUIDE.md)
 tests/                   unit tests + the synthetic end-to-end check
 ```
 
@@ -105,7 +136,7 @@ bash bin/run_synthetic_test.sh
 This writes ~600 MB of fake imzML/ibd files to `synthetic_data/` (same folder names with spaces,
 same file names, 6 slides x 3 modes; each mode uses a different storage/spectrum type so every
 code branch runs), runs phases 00 to 10 with `config.test.yaml`, runs the unit tests, and checks
-that the planted effects were found (27 checks, e.g. "Cer up in KO", "sulfatide down in white
+that the planted effects were found (37 checks, e.g. "Cer up in KO", "sulfatide down in white
 matter", "slide G has the strongest gradient"). Takes ~5 minutes. `FRESH=1 bash bin/run_synthetic_test.sh`
 regenerates the fake data.
 
@@ -115,33 +146,33 @@ Open `config.yaml`. The things to check:
 
 | key | what |
 |---|---|
-| `paths.data_root` | `"/Users/user/Desktop/BRAIN - PILAR - SPATIAL"` (keep the quotes and the upper case, there are spaces) |
+| `paths.data_root` | the folder that contains `imzML files for biostats`, e.g. `"/Users/your_name/Desktop/MSI_data"` (keep the quotes; spaces are fine; upper/lower case must match on Linux) |
 | `paths.output_root` | where outputs go. Must not be inside `data_root` |
 | `modes.run` | which modes to process: `[lip_neg, lip_pos, met_neg]` |
 | `qc.slide`, `qc.mode` | the slide/mode phase 02 looks at first (default E, lip_neg) |
 | `qc.sections.*` | split direction (`split_axis`: auto, rows or cols), which side is the sheet's Top (`top_is_low_index`, `flip_slides`), or a forced split line per slide (`manual_split`) |
 | `annotation.ppm_tolerance` | leave `null` to use the value measured in 02/03 |
 | `normalization.for_stats` | `tic` (decided up front; don't change it after seeing 09) |
-| `registration.optical_tiffs` | per-slide TIFF path, relative to `data_root`, once Pilar sends them |
+| `registration.optical_tiffs` | per-slide optical scan (TIFF) path, relative to `data_root`, if available |
 | `scils_crosscheck.enabled` | `true` to compare with the SCiLS exports |
 | `class_tests.*` | which lipid classes are summed and which ratios are tested, per mode (set before looking at results) |
 | `pair_check.*` | slide consistency check: regions used, flag threshold, and whether to add exploratory left-out / flipped columns for a flagged slide |
 
-### What's in the data folder, and what the pipeline uses
+### What the pipeline reads from the data folder
 
-Only `imzML files for biostats/` is read (36 files: 6 slides x 3 modes, `.imzML` + `.ibd` each,
-all present). Everything else is ignored by the preliminary analysis:
+Only `imzML files for biostats/` is read: 36 files, 6 slides x 3 modes, one `.imzML` and one
+`.ibd` each, in this layout (folder names with spaces are fine):
 
-| item | what it is | used? |
-|---|---|---|
-| `imzML files for biostats/` | SCiLS export of slides E-K, the main input | **yes** |
-| `raw lip neg/`, `raw lip pos/`, `raw met neg/` | one SCiLS project per slide (`.slx` + `.sbd`); the optical scans live in here | no (SCiLS-only format). Source for the TIFF exports, if we ask |
-| `*.slx/*.sbd` at the top and in `Female Data - Pilar analysis/` | Pilar's combined SCiLS projects | no |
-| `*.srd` (e.g. `CC-Ctrl-All.srd`) | SCiLS region definitions (hand-drawn regions such as corpus callosum) | no; could serve as manual ROIs later if exported as spot lists |
-| `*.mca` | SCiLS feature (m/z interval) lists | no |
-| `export_All_*.csv/.xlsx` | SCiLS intensity exports | only by the optional 04b cross-check (off) |
-| `Results_CLN3_Analysis*/`, `PC 38.1 - depleted.png`, `.Rhistory`, `.RDataTmp` | Pilar's results and R session | no |
-| `09SEP26/` | a later, separate **cerebellum** slide Z (raw Bruker `.d` folders, method files, its own TIFF) | no. Only tells us the instrument is probably a Bruker timsTOF (fleX) |
+```
+<data_root>/
+  imzML files for biostats/
+    Lipid Negative/       slide_e_lip_neg.imzML, slide_e_lip_neg.ibd, ... slide_k_...
+    Lipid Positive/       slide_e_lip_pos.imzML, ...
+    Metabolite Negative/  slide_e_met_neg.imzML, ...
+```
+
+Anything else in `data_root` (vendor project files, SCiLS exports, other runs) is ignored,
+except SCiLS intensity exports if the optional cross-check `scils_crosscheck.enabled` is on.
 
 ## 4. Run
 
@@ -183,7 +214,7 @@ python scripts/00_setup.py --config config.yaml \
 
 **Suggested first pass on new data:** run 00, 01 and 02, and check `summaries/01_inventory_*.md`,
 `summaries/02_qc_lip_neg.md` and the `figures/02_qc/lip_neg/*.png` (especially
-`sections_E.png` and `mean_spectrum_E.png`). Then we tune before the long phases.
+`sections_E.png` and `mean_spectrum_E.png`), and adjust `qc.*` settings if needed before the long phases.
 
 ---
 
@@ -202,6 +233,8 @@ python scripts/00_setup.py --config config.yaml \
 | **07_register** | per section: guide image (TIFF, else sulfatide/HexCer image, else PC1), AP search around Bregma -1.58 to -2.18, similarity -> affine -> B-spline (SimpleITK, mutual information), warped Allen labels, region masks, Dice QC, lipid WM/GM fallback | `processed/<mode>/regions.parquet`, `overlays.png`, `registration.csv` |
 | **08_explore** | Moran's I per section with permutations, seeded NMF on Control, Leiden territories on Control transferred to all pixels by kNN | `territories.parquet`, `morans_i.csv`, `nmf_programs.csv` |
 | **09_differential** | per-animal means per region / territory, log2, paired over slides: paired t (primary, with 95% CI), Wilcoxon; BH within region (targeted and all); position flag; exploratory sex. Then, from the same means: **class totals and ratios** (`class_tests`, one BH family per mode) and the **slide consistency check** (`pair_check`: a slide whose KO/Control difference is the mirror image of the others is flagged as a possible label swap) | `results/09_differential/<mode>/{differential,class_tests,pair_consistency}.csv`, volcanoes, forest plots, per-slide dot plot, correlation heatmap |
+| **09b_lipizones** | pixels clustered by lipid profile (09's QC-passing peaks; per-slide median scaling, log, PCA; k-means at the finest level, Ward merges for coarser, nested levels), **learned on Control sections only** and KO pixels assigned to the nearest lipizone; then per animal: share of the section in each lipizone, lipids and class sums/ratios inside lipizones, paired over slides | `processed/<mode>/lipizones.parquet`, `results/09b_lipizones/<mode>/{lipizones,area_tests,class_tests,lipid_tests,lipizone_composition}.csv`, `lipizone_pixels.csv.gz` (pixel table for sharing), maps per level, embedding, marker heatmap |
+| **11_compare_runs** | compares two output folders (e.g. the main run and the slide J sensitivity run): class tests, single peaks, slide consistency, counts | `results/11_compare/<mode>/`, scatter plots |
 | **10_report** | self-contained HTML with QC, overlays, tables, top-hit ion images (Control vs KO per slide, shared scale), volcanoes, caveats, all summaries | `report/report.html` |
 
 ### How the "don't assume" rules are handled
@@ -230,37 +263,119 @@ python scripts/00_setup.py --config config.yaml \
 
 ---
 
-## HPC (Ada, SLURM)
+## Running on a SLURM cluster
 
-**Step-by-step guide with every command, including the ssh login: [`docs/ADA_RUN_GUIDE.md`](docs/ADA_RUN_GUIDE.md).**
+**Step-by-step guide with every command, including the ssh login: [`docs/HPC_RUN_GUIDE.md`](docs/HPC_RUN_GUIDE.md).**
 
 Everything is driven from the Mac terminal by the scripts in `bin/hpc/`:
 
 | script | runs on | does |
 |---|---|---|
-| `settings.sh` | (edit once) | your Ada login, work folder, partition/account, local data path |
+| `settings.sh` | (edit once) | your cluster login and host, work folder, partition/account, local data path |
 | `upload_to_hpc.sh` | Mac | rsync the code + `imzML files for biostats` (~40 GB, resumable) |
 | `start_on_hpc.sh` | Mac | ssh in, run `hpc_setup.sh`, then `submit_all.sh` |
-| `hpc_setup.sh` | Ada login node | conda (module or Miniforge), env, unit tests, phase 00 + downloads |
-| `submit_all.sh` | Ada login node | submits 01 → 02, and per mode 03 → 09 as dependent jobs, then 10 |
-| `job_phase.sbatch` | Ada compute node | one phase (4 cores, 32 GB by default) |
+| `hpc_setup.sh` | cluster login node | conda (module, existing install, or Miniforge), env, unit tests, phase 00 + downloads |
+| `submit_all.sh` | cluster login node | submits 01 → 02, and per mode 03 → 09b as dependent jobs, then 10 |
+| `job_phase.sbatch` | compute node | one phase (4 cores, 32 GB by default) |
 | `status.sh` / `fetch_results.sh` | Mac | queue + progress / copy summaries, figures, report back |
 
 ```bash
 cd ~/path/to/cln3-maldi-msi
-nano bin/hpc/settings.sh                 # change HPC_WORK / partition if needed
+open -e bin/hpc/settings.sh              # set HPC_USER, HPC_HOST, LOCAL_DATA_ROOT (and HPC_WORK, partition if needed)
 bash bin/hpc/upload_to_hpc.sh            # code + data
 bash bin/hpc/start_on_hpc.sh             # setup + submit everything
 bash bin/hpc/status.sh                   # any time
-bash bin/hpc/fetch_results.sh            # when jobs are done -> ~/cln3_msi_outputs_from_ada
+bash bin/hpc/fetch_results.sh            # when jobs are done -> ~/cln3_msi_outputs_from_hpc
 ```
 
-On Ada the layout is `HPC_WORK/{repo,data,outputs,envs,slurm_logs}`, and `config.hpc.yaml` points
-at it through `${CLN3_WORK}` (outputs) and `${CLN3_DATA}` (data, `HPC_DATA` in `settings.sh`,
+On the cluster the layout is `HPC_WORK/{repo,data,outputs,envs,slurm_logs}`, and `config.hpc.yaml`
+points at it through `${CLN3_WORK}` (outputs) and `${CLN3_DATA}` (data, `HPC_DATA` in `settings.sh`,
 default `HPC_WORK/data`). A second user can read the data from another account's folder and
-write to their own: see "Running as another user" in `docs/ADA_RUN_GUIDE.md`. Edit code and config on the Mac and re-run
-`upload_to_hpc.sh --code` (the upload mirrors the repo, so edits made directly on Ada get
-overwritten). To rerun from a phase: `FROM=05 bash bin/hpc/start_on_hpc.sh`.
+write to their own: see "Running as another user" in `docs/HPC_RUN_GUIDE.md`. Edit code and
+config on the Mac and re-run `upload_to_hpc.sh --code` (the upload mirrors the repo, so edits
+made directly on the cluster get overwritten). To rerun from a phase: `FROM=05 bash bin/hpc/start_on_hpc.sh`.
+
+## Sensitivity run: slide J flipped, compared with the main run
+
+The main run uses the sample sheet as it is. In all three ion modes, slide J's knockout-minus-
+Control profile is the mirror image of the other slides, as expected if its two sections were
+mounted the other way round. To see how much the results depend on slide J's labels, the same
+analysis runs with J's two sections swapped, into its own output folder, and phase 11 lines the
+two runs up.
+
+On a cluster, from the Mac (about the time of a full run; the main outputs are only read):
+
+```bash
+cd ~/path/to/cln3-maldi-msi
+bash bin/hpc/upload_to_hpc.sh --code
+RUN=flipJ bash bin/hpc/start_on_hpc.sh      # config.hpc.flipJ.yaml -> HPC_WORK/outputs_flipJ, then phase 11
+RUN=flipJ bash bin/hpc/status.sh
+RUN=flipJ bash bin/hpc/fetch_results.sh     # -> ~/cln3_msi_outputs_from_hpc_flipJ
+```
+
+On the Mac directly (no cluster): `bash bin/run_all.sh config.flipJ.yaml`, then
+`python scripts/11_compare_runs.py --config config.flipJ.yaml --baseline config.yaml --labels main,flipJ`.
+
+Results: `summaries/11_compare_<mode>.md` and `results/11_compare/<mode>/` in the flipJ output
+folder (class tests, single peaks, slide consistency and counts, both runs side by side).
+For a like-for-like comparison, the main run should have been run with the same code: if the
+summary says the code differs, rerun the main run from 09 first (`FROM=09 bash bin/hpc/start_on_hpc.sh`).
+
+`config.test.flipJ.yaml` does the same on the synthetic data (whose labels are correct), as a
+check of the machinery: there, flipping J makes the slide consistency check flag J.
+
+## Figures
+
+Every figure is publication-ready as written: 300 dpi PNG plus an editable vector PDF (text
+stays text), one style for the whole pipeline (`src/cln3msi/figstyle.py`: sans-serif at journal
+sizes, colour-blind-safe Okabe-Ito colours with Control in blue and CLN3 KO in vermillion, scale
+bars on ion images), and a title plus a full caption. Captions are written next to each figure
+as `<figure>.caption.txt`, listed under "Figures" in the phase summary, and shown under the
+figure in `report/report.html`. Resolution and formats: `report.figure_dpi` and
+`report.figure_formats` in `config.yaml`.
+
+## Lipizones (phase 09b)
+
+Pixels grouped by their whole lipid profile, the Lipid Brain Atlas idea, at three nested levels
+(`lipizones.levels`, default 4, 12 and 40). They are learned on
+the Control sections only, with the same number of pixels from each, and every KO pixel is
+assigned to its nearest Control lipizone. Learned on all sections, a genotype effect splits
+lipizones into KO-only and Control-only ones, and comparing their areas becomes circular (the
+synthetic data show it). Every test is per animal, paired over slides, never per pixel. The
+lipids that define a lipizone also decide which pixels fall in it, so lipid and class tests
+inside lipizones are exploratory; the 09 atlas-region tests stay the main analysis.
+
+On a cluster, for an existing run (needs its 09 outputs), e.g. the flipJ run:
+
+```bash
+bash bin/hpc/upload_to_hpc.sh --code
+RUN=flipJ FROM=09b bash bin/hpc/start_on_hpc.sh     # 09b for each mode, then 10 (and 11)
+RUN=flipJ bash bin/hpc/fetch_results.sh
+```
+
+UMAP is used for the embedding plot if `umap-learn` is installed, otherwise the first two
+principal components.
+
+## MS/MS check of the raw .d folders
+
+`scripts/tools/inspect_bruker_d.py` opens Bruker `.d` folders read-only and reports what was
+acquired (MS1, MS/MS, PRM, DIA), every MS/MS isolation window, and which of our annotated
+lipids fall inside one. With Bruker's reader library (the `opentims_bruker_bridge` pip package
+on Linux) it also sums the fragment spectra per window and looks for each class's diagnostic
+fragments (`reference/msms_diagnostic_fragments.csv`, e.g. m/z 96.96 and 241.00 for sulfatides).
+
+```bash
+# settings.sh: LOCAL_D_ROOT = the Mac folder that holds the .d folders, then
+bash bin/hpc/upload_d_to_hpc.sh                 # or: bash bin/hpc/upload_d_to_hpc.sh "/path/x.d"
+METADATA_ONLY=1 bash bin/hpc/upload_d_to_hpc.sh  # only the small metadata files (no spectra): enough to
+                                                 # see whether any MS/MS was acquired at all
+RUN=flipJ bash bin/hpc/run_msms_check.sh        # one SLURM job; installs the reader library once
+RUN=flipJ bash bin/hpc/fetch_results.sh         # summaries/msms_check.md, results/msms_check/
+```
+
+On a Mac without a cluster, the metadata part runs directly (the Bruker reader library for
+the fragment spectra is Linux/Windows only):
+`python scripts/tools/inspect_bruker_d.py --config config.yaml --d-root "/path/to/raw_d" --no-spectra`.
 
 ## Troubleshooting
 
