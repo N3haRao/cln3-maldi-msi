@@ -12,7 +12,7 @@ Per mode and per section (12 per mode):
   * fallback (always computed): white vs grey matter from the guide image itself
 
 Bregma to CCF is approximate (registration.bregma_ccf_ap_mm). The AP level that fits best is
-reported per section; if all 12 sections land at very different levels, make a note.
+reported per section; if all 12 sections land at very different levels, check the overlays.
 
 Writes processed/<mode>/regions.parquet (one row per pixel of matrix_norm.h5ad, boolean
 region columns), results/07_register/<mode>/registration.csv, overlays, summary.
@@ -29,7 +29,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, register  # noqa: E402
+from cln3msi import cli, figstyle, register  # noqa: E402
 from cln3msi.util import read_h5ad  # noqa: E402
 from cln3msi.images import scaled01, section_image  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
@@ -131,8 +131,10 @@ def reuse_registration(ctx, log, S, mode: str, src: str, obs: pd.DataFrame, gval
     keys = list(obs.groupby(["slide", "section"]).groups)
     ncol = 4
     nrow = int(np.ceil(len(keys) / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 2.8 * nrow), squeeze=False)
-    colors = plt.get_cmap("tab10")
+    asp = figstyle.section_aspect(obs, pad=4)
+    fig, axes = figstyle.image_grid(nrow, ncol, 2.6, asp, title_h=0.3)
+    colors = lambda k: figstyle.REGION_COLORS[k % len(figstyle.REGION_COLORS)]  # noqa: E731
+    um = float(ctx.get("acquisition.pixel_size_um", 50))
     for ax, (slide, section) in zip(axes.ravel(), keys):
         img, mask, box, _, _ = section_image(obs, gvals, slide, section, pad=4, fill=0)
         g = np.zeros_like(img)
@@ -141,15 +143,21 @@ def reuse_registration(ctx, log, S, mode: str, src: str, obs: pd.DataFrame, gval
         for k, name in enumerate(names):
             m, *_ = section_image(obs, regions[name].to_numpy().astype(float), slide, section, pad=4, fill=0, box=box)
             if np.nanmax(m) > 0:
-                ax.contour(m, levels=[0.5], colors=[colors(k)], linewidths=0.8)
-        ax.set_title(f"{slide} {section}", fontsize=8)
-        ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
+                ax.contour(m, levels=[0.5], colors=[colors(k)], linewidths=0.9)
+        gt = obs.loc[(obs.slide == slide) & (obs.section == section), "genotype"].iloc[0]
+        ax.set_title(f"Slide {slide}, {section} ({figstyle.short_genotype(ctx, gt)})", fontsize=8)
+        figstyle.image_axes(ax)
+        figstyle.scalebar(ax, um, color="white")
     for ax in axes.ravel()[len(keys):]:
         ax.axis("off")
-    handles = [plt.Line2D([], [], color=colors(k), label=n.replace("region_", "")) for k, n in enumerate(names)]
-    fig.legend(handles=handles, loc="lower center", ncol=min(len(handles), 7), fontsize=7)
-    fig.suptitle(f"{mode}: regions reused from {src}, drawn on {mode}'s own guide ({gdesc})", fontsize=9)
-    S.fig(fig, "overlays.png")
+    handles = [plt.Line2D([], [], color=colors(k), lw=1.5, label=figstyle.region_name(n.replace("region_", "")))
+               for k, n in enumerate(names)]
+    fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 7), bbox_to_anchor=(0.5, -0.01))
+    figstyle.title(fig, f"{figstyle.mode_name(mode)}: atlas regions", f"Regions registered on {src}, drawn on this mode's guide image ({gdesc})")
+    S.fig(fig, "overlays.png", caption=(
+        f"Allen Mouse Brain Atlas regions used for the statistics, outlined on each section. The regions were "
+        f"registered once on the {figstyle.mode_name(src).lower()} data and transferred pixel by pixel to this mode "
+        f"(same acquisition grid). Greyscale, this mode's guide image ({gdesc}), scaled per section. Scale bar, 1 mm."))
 
     S.h("Settings")
     S.kv({"regions": f"reused from {src} (registration.reuse_from)",
@@ -269,8 +277,10 @@ def main():
         # overlays: guide image + contours of the region groups + lipid WM outline
         ncol = 4
         nrow = int(np.ceil(len(panels) / ncol))
-        fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 2.8 * nrow), squeeze=False)
-        colors = plt.get_cmap("tab10")
+        asp = np.median([p_[3].shape[0] / max(p_[3].shape[1], 1) for p_ in panels]) if panels else 1.0
+        fig, axes = figstyle.image_grid(nrow, ncol, 2.6, asp, title_h=0.42)
+        colors = lambda k: figstyle.REGION_COLORS[k % len(figstyle.REGION_COLORS)]  # noqa: E731
+        um = float(ctx.get("acquisition.pixel_size_um", 50))
         for ax, (slide, section, g, mask, wm, res, rec) in zip(axes.ravel(), panels):
             ax.imshow(np.where(mask, g, np.nan), cmap="Greys_r", interpolation="nearest")
             if res is not None and res.get("ok"):
@@ -279,34 +289,46 @@ def main():
                     m = np.isin(lab, list(rid)).astype(float)
                     if m.any():
                         ax.contour(m, levels=[0.5], colors=[colors(k)], linewidths=0.9)
-                ax.contour((lab > 0).astype(float), levels=[0.5], colors="yellow", linewidths=0.6, linestyles=":")
-                t = f"Dice {res['dice']:.2f}, Bregma~{rec.get('bregma_estimate_mm')}"
+                ax.contour((lab > 0).astype(float), levels=[0.5], colors="white", linewidths=0.6, linestyles=":")
+                br = rec.get("bregma_estimate_mm")
+                t = f"Dice {res['dice']:.2f}" + (f", bregma \u2248 {float(br):.2f} mm" if br is not None and str(br) != "nan" else "")
             else:
-                ax.contour(wm.astype(float), levels=[0.5], colors="cyan", linewidths=0.8)
-                t = "no atlas: lipid WM outline (cyan)"
-            ax.set_title(f"{slide} {section} {rec['animal_id']}\n{t}", fontsize=7)
-            ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
+                ax.contour(wm.astype(float), levels=[0.5], colors="#56B4E9", linewidths=0.8)
+                t = "No atlas fit: lipid-defined white matter"
+            ax.set_title(f"Slide {slide}, {section}, {rec['animal_id']}\n{t}", fontsize=7, fontweight="normal")
+            figstyle.image_axes(ax)
+            figstyle.scalebar(ax, um, color="white")
         for ax in axes.ravel()[len(panels):]:
             ax.axis("off")
         if atlas is not None:
-            handles = [plt.Line2D([], [], color=colors(k), label=n) for k, n in enumerate(region_ids)]
-            handles.append(plt.Line2D([], [], color="yellow", ls=":", label="atlas brain outline"))
-            fig.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=7)
-        fig.suptitle(f"{mode}: atlas regions warped onto each section (guide: {gdesc})", fontsize=9)
-        S.fig(fig, "overlays.png")
+            handles = [plt.Line2D([], [], color=colors(k), lw=1.5, label=figstyle.region_name(n))
+                       for k, n in enumerate(region_ids)]
+            handles.append(plt.Line2D([], [], color="0.4", ls=":", label="Atlas brain outline"))
+            fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 7), bbox_to_anchor=(0.5, -0.01))
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: registration to the Allen atlas", f"Guide image: {gdesc}")
+        S.fig(fig, "overlays.png", caption=(
+            "Allen Mouse Brain Atlas (25 \u00b5m) regions warped onto each section by similarity, affine and B-spline "
+            f"registration of the guide image ({gdesc}, greyscale) to the atlas, searching coronal positions in the "
+            "configured bregma range. Coloured outlines, the regions tested in phase 09; dotted, the atlas brain "
+            "outline. Dice, overlap between the warped atlas brain and the tissue mask (sections below the "
+            "threshold fall back to lipid-defined white and grey matter). Scale bar, 1 mm."))
 
-        fig, axes = plt.subplots(nrow, ncol, figsize=(3.0 * ncol, 2.5 * nrow), squeeze=False)
+        fig, axes = figstyle.image_grid(nrow, ncol, 2.2, asp, title_h=0.28)
         for ax, (slide, section, g, mask, wm, res, rec) in zip(axes.ravel(), panels):
             show = np.full(mask.shape, np.nan)
-            show[mask] = 0.4
+            show[mask] = 0.35
             show[wm] = 1.0
             ax.imshow(show, cmap="Greys", vmin=0, vmax=1, interpolation="nearest")
-            ax.set_title(f"{slide} {section}: WM {rec['wm_lipid_fraction']:.0%}", fontsize=8)
-            ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
+            ax.set_title(f"Slide {slide}, {section}: {rec['wm_lipid_fraction']:.0%} white matter", fontsize=7.5)
+            figstyle.image_axes(ax)
+            figstyle.scalebar(ax, um)
         for ax in axes.ravel()[len(panels):]:
             ax.axis("off")
-        fig.suptitle(f"{mode}: fallback white (black) vs grey matter from the guide image", fontsize=9)
-        S.fig(fig, "wm_gm_fallback.png")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: lipid-defined white and grey matter")
+        S.fig(fig, "wm_gm_fallback.png", caption=(
+            f"White matter (black) and grey matter (grey) defined from the guide image alone ({gdesc}, Otsu threshold "
+            "within the tissue). Used only for sections whose atlas registration failed; the percentage is the "
+            "white-matter share of the section. Scale bar, 1 mm."))
 
         S.h("Settings")
         S.kv({"atlas": atlas.name if atlas is not None else "none (fallback WM/GM only)", "guide": gdesc,
