@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run one phase:   bash bin/run_phase.sh 04 [config.yaml] [extra args, e.g. --mode lip_neg]
-# Phases: 00 01 02 03 04 04b 05 06 07 08 09 10
+# Phases: 00 01 02 03 04 04b 05 06 07 08 09 09b 10 11 (11 = compare with another run, needs --baseline;
+#         msms = MS/MS check of the raw .d folders)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PHASE="${1:?usage: run_phase.sh <phase> [config] [args...]}"
@@ -20,7 +21,10 @@ case "$PHASE" in
   07)  SCRIPT="scripts/07_register.py" ;;
   08)  SCRIPT="scripts/08_explore.py" ;;
   09)  SCRIPT="scripts/09_differential.py" ;;
+  09b) SCRIPT="scripts/09b_lipizones.py" ;;
   10)  SCRIPT="scripts/10_report.py" ;;
+  11)  SCRIPT="scripts/11_compare_runs.py" ;;
+  msms) SCRIPT="scripts/tools/inspect_bruker_d.py" ;;
   *)   echo "unknown phase $PHASE"; exit 2 ;;
 esac
 echo ">>> phase $PHASE: $SCRIPT --config $CONFIG $*"
