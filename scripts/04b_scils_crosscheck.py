@@ -27,7 +27,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli  # noqa: E402
+from cln3msi import cli, figstyle  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
 
 NUM = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
@@ -156,12 +156,18 @@ def main():
         ours_matched = {round(v, 6) for v in M.loc[M.matched, "our_mz"]}
         ours_only = [v for v in ours if round(v, 6) not in ours_matched]
 
-        fig, ax = plt.subplots(figsize=(7, 3))
-        ax.scatter(M["scils_mz"], M["ppm_diff"], c=np.where(M["matched"], "tab:green", "tab:red"), s=12)
-        ax.axhspan(-tol, tol, color="0.9")
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.axhspan(-tol, tol, color="0.92", label=f"Match tolerance (\u00b1{tol:g} ppm)")
+        for ok_, col, lab in ((True, figstyle.OKABE_ITO[2], "Matched"), (False, figstyle.MUTANT, "Not matched")):
+            sel = M["matched"] == ok_
+            ax.scatter(M.loc[sel, "scils_mz"], M.loc[sel, "ppm_diff"], color=col, s=12, label=f"{lab} (n = {int(sel.sum())})")
         ax.set_ylim(-5 * tol, 5 * tol)
-        ax.set_xlabel("SCiLS m/z"); ax.set_ylabel("ppm to our nearest peak")  # noqa: E702
-        S.fig(fig, "scils_vs_ours.png")
+        ax.set_xlabel("SCiLS m/z"); ax.set_ylabel("Distance to our nearest peak (ppm)")  # noqa: E702
+        ax.legend(loc="upper right")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: SCiLS export vs our peak list")
+        S.fig(fig, "scils_vs_ours.png", caption=(
+            "Each m/z in the collaborators' SCiLS export, plotted against its distance to the nearest peak in our "
+            "peak list. Points inside the grey band are the same feature in both lists."))
 
         S.h("Comparison")
         S.kv({"SCiLS features": len(M), f"matched within {tol:g} ppm": int(M.matched.sum()),
