@@ -74,8 +74,8 @@ writes tables, figures and a short summary. Phases 03 to 09 run separately for e
   method "auto" uses Otsu's method, but switches to the lower class boundary of a three-class
   Otsu split when that fills holes inside the sections (this happens when the imaged area
   barely extends past the tissue, so that Otsu separates white from grey matter instead of
-  tissue from glass). One pixel at every tissue edge is excluded from statistics
-  (`erode_edge_px`), because edge pixels mix tissue and glass.
+  tissue from glass). Three pixels (150 µm) at every tissue edge are excluded from statistics
+  (`erode_edge_px`), because edge pixels mix tissue and glass and showed bright-rim artefacts.
 * **Section split.** The two largest tissue pieces are assigned to the two animals. The
   direction of the split (sections above each other or side by side) is detected from the
   data (`split_axis: auto`); for this dataset the sections are side by side. The left
@@ -100,10 +100,13 @@ writes tables, figures and a short summary. Phases 03 to 09 run separately for e
    all sections are grouped when they lie within the alignment tolerance.
 4. A consensus peak is kept if it was picked in at least half of the sections
    (`min_section_fraction` = 0.5) and is present in at least 1% of tissue pixels
-   (`min_pixel_fraction`). At most `max_peaks` = 2,000 peaks are kept, the strongest first.
+   (`min_pixel_fraction`). At most `max_peaks` = 4,000 peaks are kept, the strongest first.
 5. Every kept peak is integrated in every tissue pixel (sum of intensities inside the peak
    window), giving a pixels × peaks matrix per mode. DAN matrix peaks are moved out of the
-   matrix into separate columns, so they do not enter normalization or statistics.
+   matrix into separate columns, so they do not enter normalization or statistics. So are
+   *matrix-like* peaks: those whose signal on the bare glass is at least half their signal on the
+   tissue (median over slides; `peaks.matrix_filter`), which catches DAN clusters and adducts
+   that the list of known matrix ions misses.
 
 ### 3.3 Annotation (phase 05)
 
@@ -114,6 +117,45 @@ base). A library of candidate compositions is generated from class rules in
 candidate has an exact elemental formula. Compositions whose formula is absent from LIPID MAPS
 are removed. For the metabolite mode, HMDB (or the curated list in
 `reference/metabolites_curated.csv`) is added.
+
+The rules cover 37 classes plus a few fixed species: the main glycero- and sphingolipid classes,
+lyso forms, gangliosides (GM1, GM2, GM3, GD1, GD2, GD3, GT1), cardiolipins, PIP and PIP2,
+acylcarnitines, Hex3Cer, lyso-sulfatide, psychosine, sphingosine and S1P. Classes added after
+the first results carry a small ranking penalty, so on an exact-mass tie the established class
+wins (the other stays listed as a candidate). PE-ceramide and ceramide-1-phosphate are left out
+of the rules on purpose: they have exactly the formulas of sphingomyelin and ether-LPC species
+(for example PE-Cer 38:1 [M−H]⁻ = SM 36:1 [M−CH3]⁻), which are far more abundant in brain.
+
+**Second pass.** Peaks that the rules (and, in the metabolite mode, the curated list and HMDB)
+leave unnamed are matched against every LIPID MAPS structure and every SwissLipids species
+(`annotation.second_pass`), with the same adduct rules and a sanity range for chain lengths.
+These names are marked in `annotation_source`, are never tagged as hypothesis classes, and
+should be treated as leads.
+
+**Brain evidence (Lipid Brain Atlas).** Every name is also scored against the mouse-brain
+lipid tables published with the Lipid Brain Atlas ("The lipidomic architecture of the mouse
+brain", Nature 2026, doi:10.1038/s41586-026-11050-0, CC BY 4.0; stored in
+`reference/lamanno2026/`, built by `scripts/tools/build_lamanno_reference.py`). The score
+follows the paper: seen by LC-MS/MS in mouse brain 8 points (their tandem MS table or their
+quantitative whole-brain HILIC-MS/MS), by LC-MS 2 (their HILIC and reverse-phase lists), in
+each published brain dataset 1 (Fitzner et al. LC-MS; Vandenbosch et al. MALDI-MSI), in their
+own MALDI peaks (positive mode, within 5 ppm, their score > 4) 1, database only 0. Their
+METASPACE term is left out, because that FDR describes their data. `confidence_tier` is
+high (score > 4), medium (2 to 4), low (1), database only (0, but the class is covered by
+their tables), or not covered (no table covers the class: gangliosides, LSM, metabolites; no
+verdict either way). Applied to the paper's own MALDI peaks, this scoring makes the same call
+(score > 4 or not) as theirs for 721 of 824 single-name peaks; the rest differ where their
+METASPACE term or per-adduct counting tipped the balance. The evidence shows that a lipid
+exists in mouse brain, not that our peak is that lipid.
+
+**Ambiguous peaks.** When several compositions fit a peak, all in classes that the paper's
+quantitative whole-brain LC-MS/MS measures, the one holding more than 80% of the candidates'
+summed abundance (nmol%, mean of 8 mice) is reported, as in the paper (`resolved_by =
+molar_fraction`); a candidate of a measured class that was not detected counts as 0. Only
+candidates in the same ionization regime are compared: if a default adduct ([M−H]⁻) competes
+with a class-specific one ([M−CH3]⁻ of a choline lipid), only the default ones count, since
+abundance says nothing about how poorly PC ionizes in negative mode. Otherwise the ranking's
+choice stays and the peak keeps all its candidates.
 
 A peak matches a candidate if the ppm error of some (candidate, adduct) is within the
 tolerance from phase 03. Adducts follow ion chemistry:
@@ -154,7 +196,10 @@ brainglobe) with SimpleITK:
    B-spline (1 mm control-point grid). The B-spline result is kept only if it does not reduce
    the overlap.
 4. **Quality.** The Dice coefficient between the tissue mask and the warped atlas outline
-   (0 = no overlap, 1 = perfect). Sections below `min_dice` = 0.8 do not get atlas regions.
+   (0 = no overlap, 1 = perfect). Sections below `min_dice` = 0.8 do not get atlas regions. Phase 09 also reports any section whose
+   share of an atlas region is outside 0.6 to 1.67 times the median section (a sign of a poor fit),
+   and sections listed in `differential.exclude_sections_from_regions` are left out of the
+   atlas-region tests.
 
 Warped atlas labels give each pixel an Allen structure. The regions used are white matter
 ("fiber tracts"), corpus callosum, isocortex, hippocampal formation and thalamus, each with all
@@ -168,7 +213,8 @@ This phase describes spatial structure. It does not test genotype.
 
 * **Moran's I** per peak and section, on a 6-nearest-neighbour graph of pixel positions,
   with a permutation p-value (199 permutations). A peak counts as spatially structured if
-  I ≥ 0.3 in at least half of the sections.
+  I ≥ 0.4 in at least half of the sections (0.4 is the Lipid Brain Atlas threshold; it was
+  0.3 before).
 * **Lipid programs.** Non-negative matrix factorization (NMF) of the structured peaks,
   trained on control pixels only, with the number of programs chosen at the elbow of the
   reconstruction-error curve. Before NMF, each peak is divided by its per-slide median so
@@ -226,7 +272,19 @@ alternative. With only two animals per slide, its slide-variance estimate collap
 reported implausibly small p-values (far below the paired t-test on the same numbers). It is
 off by default (`run_mixedlm: false`).
 
-### 4.3 Robustness checks reported next to every test
+### 4.3 Single peaks: the moderated t-test
+
+For single peaks, significance is decided by the **empirical-Bayes moderated paired t-test**
+(`single_peak_test: moderated`), the method behind limma. With 6 pairs, each peak's variance
+rests on only 5 degrees of freedom, so some peaks get very small variances by chance (false
+positives) and others very large ones. The moderated test estimates a common prior variance
+from all peaks in the region and shrinks each peak's variance towards it, adding d0 prior
+degrees of freedom (reported as `df_prior`). The test statistic is the paired t with the
+shrunken variance, on n − 1 + d0 degrees of freedom. On simulated null data it keeps the
+nominal false-positive rate, and it detects consistent effects more often than the plain paired
+t-test. The plain paired t (`p_ttest`, `q_all_ttest`) is always reported next to it.
+
+### 4.3b Robustness checks reported next to every test
 
 * **Exact Wilcoxon signed-rank test** on the 6 differences. It ranks the differences, so it
   does not assume normality and shows whether one extreme pair drives a t-test result. With
@@ -234,6 +292,11 @@ off by default (`run_mixedlm: false`).
   multiple-testing correction on its own; it is a check, not a test for calling hits.
 * **Sign test (binomial)**: how many of the pairs go up, compared with 50:50. It ignores the
   size of the changes and has the same floor of 0.031.
+* **Gradient-corrected test**: the same paired test after subtracting each slide's technical log2
+  ratio predicted from the off-tissue position gradient (`log2fc_gradient_corrected`,
+  `p_gradient_corrected`; Section 5.1).
+* **Normalization check** (class tests): the same tests with median instead of TIC
+  normalization (`*_median_norm` columns), from the size factors phase 06 stores.
 * **Number of pairs in the direction of the mean** (`n_pairs_up`) and every pair's own
   difference (`pair_<slide>` columns in the class tests).
 
@@ -244,10 +307,23 @@ corrected value is the q-value, and q < 0.05 (`fdr_alpha`) is called significant
 all set before looking at results:
 
 * **single peaks, targeted**: within each region, only the peaks with a hypothesis tag;
-* **single peaks, untargeted**: within each region, every tested peak. Tested peaks are those
-  that are annotated or spatially structured (`untargeted_peaks: annotated_or_structured`), so
-  that hundreds of unstructured noise peaks do not dilute the correction;
-* **class-level and ratio tests**: one family per mode (Section 4.5).
+* **single peaks, untargeted**: within each region, the peaks that pass the Lipid Brain
+  Atlas feature QC (`untargeted_peaks: lamanno`, `src/cln3msi/featureqc.py`): monoisotopic,
+  annotated in some database, spatially structured (Moran's I above), more signal on tissue
+  than on bare glass (off/on-tissue ratio < 1), and one adduct per lipid. For the last rule,
+  ions with the same name whose pixel intensities correlate (r ≥ 0.5) are one lipid; the
+  ion with the fewest zero pixels (then the most signal) is kept. Ions that do not correlate
+  are all kept and flagged, since one is probably a different compound. None of these rules
+  looks at genotype. Peaks that fail are still tested and reported, without a `q_all`, and
+  the matrix itself is not changed (normalization is unaffected). Per-peak flags are in
+  `feature_qc.csv`. Before this, the family was "annotated or structured";
+* **class-level and ratio tests**: one family per mode (Section 4.5);
+* **primary endpoints**: a short list of class-level outcomes named in advance
+  (`class_tests.primary`), corrected only among themselves (`q_primary`). This is the family with
+  real power at n = 6; everything else is exploratory.
+
+Every result also carries `large_effect` = |log2FC| ≥ 0.2 (about 15%), the effect-size
+threshold the Lipid Brain Atlas used. It is a flag next to the q-value, not a filter.
 
 ### 4.5 Class-level and ratio tests
 
@@ -264,6 +340,24 @@ the genotype results were examined. Species with ambiguous class assignments, is
 species detected in fewer than `min_sections` = 10 sections are excluded; the members of every
 class are listed in `class_members.csv`.
 
+Two additions report on the same tests without changing them. `n_species_high_evidence`
+counts the members with Lipid Brain Atlas evidence above 4. The feature-QC sensitivity
+(`log2fc_featureqc`, `p_featureqc`, `n_species_featureqc`) repeats every class and ratio
+test using only species that pass the feature QC of Section 4.4; in positive mode this also
+stops one lipid being counted once per adduct. The class definitions and primary endpoints
+themselves stay as fixed in advance.
+
+**Precursor-to-product ratios** (`reaction_tests.csv`, exploratory, own BH family per mode).
+For sphingolipid steps that keep the ceramide backbone, the product / precursor ratio of the
+same backbone is tested per animal, for example HexCer 42:2;O2 / Cer 42:2;O2 (Ugt8, the
+galactosylceramide synthase of myelin), SHexCer / HexCer (Gal3st1, sulfatide synthesis),
+Hex2Cer / HexCer and SM / Cer. Two lipids ionize differently, but in a comparison of log
+ratios between genotypes that constant cancels, so each ratio indexes one enzyme step. Steps
+and regions (whole section, white matter) are set in `class_tests.reactions`; only backbones
+with both species among the usable species are tested. Lyso / diacyl glycerophospholipid
+steps are left out on purpose: one sum composition maps to many lyso species, and in MALDI
+the in-source loss of a chain from PC produces LPC-like ions.
+
 ### 4.6 Sex
 
 Both animals on a slide are the same sex, so **sex cancels in the within-slide difference**:
@@ -271,8 +365,29 @@ the paired analysis is already adjusted for it, and sex cannot be added as a sep
 covariate. What can be asked is whether the genotype effect differs between the sexes (the sex
 × genotype interaction). This is tested as a Welch t-test of the 3 female pair differences
 against the 3 male ones (`p_sex_difference_exploratory`, with `log2fc_Female` and
-`log2fc_Male`). Because all females were run in runs 1 to 3 and all males in run 4, this is
+`log2fc_Male`), and summarized as I² (`I2_sex`, 0 = the sexes agree, near 1 = they clearly differ). Because all females were run in runs 1 to 3 and all males in run 4, this is
 equally a run × genotype comparison, and it is reported as exploratory only.
+
+### 4.7 Lipizones (phase 09b, exploratory)
+
+Following the Lipid Brain Atlas, pixels were grouped by their lipid profile without genotype
+labels. Features were the peaks passing the feature QC (section 4.4). Each peak was divided by
+its per-slide median (both sections of a slide pooled, so the within-slide genotype difference
+is kept), log-transformed (log1p) and z-scored; principal component analysis (30 components)
+and k-means clustering (40 clusters) were fitted on 5,000 pixels from each Control section,
+and Ward linkage of the 40 cluster centres gave nested coarser levels (12 and 4). Every pixel,
+including all knockout pixels, was then assigned to its nearest cluster. Training on Controls
+only keeps the knockout from defining its own clusters (reference mapping, as for the 08
+territories). Each lipizone was described by its marker lipids (mean z-score) and its overlap
+with the registered atlas regions.
+
+Genotype was compared per animal: (1) each animal's share of its section in each lipizone,
+log2-transformed, paired t-test over slides, one BH family per level; (2) the mean of each
+feature inside each lipizone at levels 4 and 12, moderated paired t, BH within each lipizone
+and over the level; (3) class totals and ratios inside lipizones (section 4.5 definitions),
+one BH family per level. Because a lipizone's own marker lipids decide which pixels belong to
+it, tests (2) and (3) partly condition on the outcome; they are reported as exploratory, and
+the atlas-region tests, whose regions come from anatomy alone, remain the main analysis.
 
 ## 5. Quality checks for the design's weak points
 
@@ -287,7 +402,8 @@ statistical model can remove it from this design. Two measures limit the risk:
    log off-tissue matrix signal against position is fitted per slide, and converted into the
    log2 ratio that this trend alone would produce between the two section centres. In phase 09,
    a result with the same sign and less than `flag_ratio` = 2 times the median predicted ratio
-   is flagged `could_be_position`. This is a warning, not a correction.
+   is flagged `could_be_position`. This is a warning, not a correction. As a sensitivity check,
+   every test is also repeated after subtracting each slide's predicted ratio (Section 4.3b).
 2. **Ratios** (Section 4.5) cancel a trend that scales all signals in a pixel.
 
 ### 5.2 Sex and run
@@ -339,7 +455,7 @@ justify setting `qc.sections.flip_slides`.
 
 Python 3.11 with the versions pinned in `requirements.txt` (numpy, scipy, pandas, anndata,
 pyimzML, lxml, scikit-image, scikit-learn, statsmodels, SimpleITK, brainglobe-atlasapi, igraph,
-leidenalg, matplotlib). Reference data: LIPID MAPS Structure Database and HMDB (downloaded and
+leidenalg, matplotlib). Reference data: LIPID MAPS Structure Database, HMDB and SwissLipids (downloaded and
 cached by phase 00), the Allen Mouse Brain CCF at 25 µm (`allen_mouse_25um` via brainglobe).
 Random steps (permutations, subsampling, NMF initialization) use `runtime.seed` = 0, so a rerun
 of the same code and config gives the same numbers.
