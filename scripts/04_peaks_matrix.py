@@ -33,7 +33,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, qc, samples, spectra  # noqa: E402
+from cln3msi import cli, figstyle, qc, samples, spectra  # noqa: E402
 from cln3msi.imzml_io import SlideReader  # noqa: E402
 from cln3msi.report import Summary, decimate, plt  # noqa: E402
 from cln3msi.tissue import BOTTOM, POSITION_NAME, TOP  # noqa: E402
@@ -131,6 +131,32 @@ def main():
             cons.loc[close, "is_matrix"] = True
             cons.loc[close, "matrix_ion"] = m["name"]
 
+        # matrix-like peaks: as strong on the glass as on the tissue. The DAN list above only
+        # knows the main matrix ions; DAN also forms clusters and adducts that end up here.
+        MF = P.get("matrix_filter") or {}
+        cons["off_on_ratio"] = np.nan
+        cons["matrix_like"] = False
+        if True:                       # always compute the ratio; only drop peaks if enabled
+            ratios = []
+            for s in slides:
+                ms = np.load(ctx.out("processed", mode, "qc", f"meanspec_{s}.npz", mkdir=False))
+                if "off" not in ms:
+                    continue
+                f = 1 + offsets[s] * 1e-6
+                on = np.mean([ms[g] for g in ("Top", "Bottom") if g in ms], axis=0)
+                ws_on = spectra.window_sums(ms["axis"], on, lo * f, hi * f)
+                ws_off = spectra.window_sums(ms["axis"], ms["off"], lo * f, hi * f)
+                with np.errstate(all="ignore"):
+                    ratios.append(ws_off / np.where(ws_on > 0, ws_on, np.nan))
+            if ratios:
+                cons["off_on_ratio"] = np.nanmedian(np.vstack(ratios), axis=0)
+                thr = float(MF.get("max_off_on_ratio", 0.5))
+                cons["matrix_like"] = (cons["off_on_ratio"] >= thr) & ~cons["is_matrix"] & bool(MF.get("enabled", False))
+                log.info(f"matrix filter {'on' if MF.get('enabled', False) else 'off (ratio reported only)'}: "
+                         f"{int(((cons['off_on_ratio'] >= thr) & ~cons['is_matrix']).sum())} peaks with off/on >= {thr:g}")
+            else:
+                S.warn("no off-tissue mean spectra from 03: matrix filter skipped", log)
+
         # ---- 4. extraction --------------------------------------------------------------
         X_parts, obs_parts, present = [], [], {}
         chunk = int(ctx.get("runtime.spectra_chunk", 2000))
@@ -191,9 +217,10 @@ def main():
         keep = frac_ok >= float(P["min_section_fraction"])
         n_before = len(cons)
         if P.get("drop_matrix_peaks", True):
-            for j in np.flatnonzero(cons["is_matrix"].to_numpy()):
+            drop_m = (cons["is_matrix"] | cons["matrix_like"]).to_numpy()
+            for j in np.flatnonzero(drop_m):
                 obs[f"dan_{cons.loc[j, 'mz']:.4f}"] = X[:, j]
-            keep &= ~cons["is_matrix"].to_numpy()
+            keep &= ~drop_m
         cons_kept = cons[keep].reset_index(drop=True)
         X = X[:, keep]
         log.info(f"pixel filter + matrix removal: {n_before} -> {len(cons_kept)} peaks")
@@ -214,28 +241,44 @@ def main():
 
         # ---- figures ----------------------------------------------------------------------
         z = np.load(ctx.out("processed", mode, "qc", f"meanspec_{slides[0]}.npz", mkdir=False))
-        fig, ax = plt.subplots(figsize=(12, 3.8))
+        fig, ax = plt.subplots(figsize=(10, 3.2))
         tis_mean = np.mean([z[g] for g in ("Top", "Bottom") if g in z], axis=0)
-        ax.plot(*decimate(z["axis"] / (1 + offsets[slides[0]] * 1e-6), tis_mean), lw=0.5, color="0.3")
+        ax.plot(*decimate(z["axis"] / (1 + offsets[slides[0]] * 1e-6), tis_mean), lw=0.5, color="0.25",
+                label=f"Tissue mean spectrum, slide {slides[0]}")
         ymax = tis_mean.max()
-        ax.vlines(var["mz"], 0, ymax * 0.05, color="tab:red", lw=0.6, label="kept peaks")
+        ax.vlines(var["mz"], 0, ymax * 0.05, color=figstyle.MUTANT, lw=0.6, label=f"Kept peaks (n = {len(var):,})")
         dropped = cons[~keep]
-        ax.vlines(dropped["mz"], 0, ymax * 0.03, color="tab:orange", lw=0.6, label="dropped (pixel filter / matrix)")
+        ax.vlines(dropped["mz"], 0, ymax * 0.03, color=figstyle.OKABE_ITO[4], lw=0.6,
+                  label=f"Dropped peaks (n = {len(dropped):,})")
         ax.set_xlabel("m/z (recalibrated)")
-        ax.set_title(f"{mode}: {len(var)} kept peaks on slide {slides[0]}'s tissue mean spectrum", fontsize=9)
-        ax.legend(fontsize=7, loc="upper right")
-        S.fig(fig, "peaks_on_mean_spectrum.png")
+        ax.set_ylabel("Mean intensity (a.u.)")
+        ax.legend(loc="upper right")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: peak list")
+        S.fig(fig, "peaks_on_mean_spectrum.png", caption=(
+            f"Peaks kept for the data matrix (vermillion ticks) and candidate peaks dropped because they were "
+            f"present in too few sections or pixels, or were matrix ions (orange ticks), drawn on the recalibrated "
+            f"mean tissue spectrum of slide {slides[0]}."))
 
-        fig, axes = plt.subplots(1, 2, figsize=(9, 3))
-        axes[0].hist(pd.DataFrame(rows)["n_sections"], bins=np.arange(0.5, n_sec + 1.5), color="0.5")
-        axes[0].axvline(need - 0.5, color="tab:red")
-        axes[0].set_xlabel("sections a feature was picked in")
-        axes[1].hist(var["spread_ppm"], bins=30, color="0.5")
-        axes[1].set_xlabel("m/z spread across sections (ppm), kept peaks")
-        S.fig(fig, "alignment_qc.png")
+        fig, axes = plt.subplots(1, 2, figsize=(8, 2.9), gridspec_kw={"wspace": 0.3})
+        axes[0].hist(pd.DataFrame(rows)["n_sections"], bins=np.arange(0.5, n_sec + 1.5), color="0.6", edgecolor="white")
+        axes[0].axvline(need - 0.5, color=figstyle.MUTANT, ls="--", label=f"Minimum ({need} sections)")
+        axes[0].set_xlabel("Sections in which the peak was picked")
+        axes[0].set_ylabel("Number of peaks")
+        axes[0].legend(loc="upper left")
+        axes[1].hist(var["spread_ppm"], bins=30, color="0.6", edgecolor="white")
+        axes[1].set_xlabel("m/z spread across sections (ppm)")
+        axes[1].set_ylabel("Number of kept peaks")
+        figstyle.panel_labels(axes, x=-0.18)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: peak alignment across sections")
+        S.fig(fig, "alignment_qc.png", caption=(
+            "(A) Number of sections in which each aligned peak was detected; peaks left of the dashed line were "
+            "dropped. (B) Spread of each kept peak's m/z across sections after per-slide recalibration, a measure "
+            "of how well peaks were aligned."))
 
         top = np.argsort(-np.asarray(X.mean(axis=0)).ravel())[:4]
-        fig, axes = plt.subplots(len(top), len(slides), figsize=(1.9 * len(slides), 2.2 * len(top)), squeeze=False)
+        um = float(ctx.get("acquisition.pixel_size_um", 50))
+        fig, axes = plt.subplots(len(top), len(slides), figsize=(1.7 * len(slides) + 0.8, 1.6 * len(top) + 0.6),
+                                 squeeze=False, gridspec_kw={"wspace": 0.05, "hspace": 0.1})
         for a, j in enumerate(top):
             vmax = np.percentile(X[:, j], 99)
             for b, s in enumerate(slides):
@@ -243,20 +286,33 @@ def main():
                 yy, xx = obs.y.to_numpy()[sel], obs.x.to_numpy()[sel]
                 img = np.full((yy.max() + 1, xx.max() + 1), np.nan)
                 img[yy, xx] = X[sel, j]
-                axes[a, b].imshow(img, vmin=0, vmax=vmax, cmap=ctx.get("report.cmap", "viridis"), interpolation="nearest")
-                axes[a, b].set_xticks([]); axes[a, b].set_yticks([])  # noqa: E702
+                im = axes[a, b].imshow(img, vmin=0, vmax=vmax, cmap=ctx.get("report.cmap", "viridis"),
+                                       interpolation="nearest")
+                figstyle.image_axes(axes[a, b])
                 if a == 0:
-                    axes[a, b].set_title(s, fontsize=8)
-            axes[a, 0].set_ylabel(f"{var['mz'].iloc[j]:.4f}", fontsize=8)
-        fig.suptitle(f"{mode}: 4 strongest peaks, raw intensity, shared colour scale per row", fontsize=9)
-        S.fig(fig, "top_peaks_images.png")
+                    axes[a, b].set_title(f"Slide {s}")
+            axes[a, 0].set_ylabel(f"m/z {var['mz'].iloc[j]:.4f}", fontsize=7)
+            cb = fig.colorbar(im, ax=axes[a, -1], fraction=0.08, pad=0.04)
+            cb.ax.tick_params(labelsize=5); cb.outline.set_linewidth(0.4)  # noqa: E702
+        figstyle.scalebar(axes[-1, -1], um, color="white")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: the four most intense peaks")
+        S.fig(fig, "top_peaks_images.png", caption=(
+            "Raw (unnormalized) ion images of the four peaks with the highest mean intensity, on every slide "
+            "(both sections). Each row shares one colour scale, 0 to the 99th percentile. Scale bar, 1 mm."))
 
         S.h("Peak list")
         S.kv({"spectrum type": stype, "alignment tolerance (ppm)": align,
               "recalibration offsets (ppm)": ", ".join(f"{k} {v:+.2f}" for k, v in offsets.items()),
               "sections": n_sec, "aligned features": n_all,
               f"in >= {need} sections": n_before, "after pixel filter and matrix removal": len(var),
-              "matrix (DAN) peaks moved to obs": int(cons["is_matrix"].sum())})
+              "matrix (DAN) peaks moved to obs": int(cons["is_matrix"].sum()),
+              "matrix-like peaks moved to obs (off/on tissue ratio)": int(cons["matrix_like"].sum()),
+              "peaks with off/on-tissue ratio >= 1 (not removed unless matrix_filter is on)":
+                  int((cons["off_on_ratio"] >= 1).sum())})
+        if cons["matrix_like"].any():
+            S.p("Matrix-like peaks (as strong off tissue as on it, at least max_off_on_ratio), strongest first:")
+            S.table(cons[cons["matrix_like"]].nlargest(25, "median_height")[["mz", "off_on_ratio", "median_height",
+                                                                              "n_sections"]].round(4))
         S.h("Matrix")
         S.kv({"pixels": adata.n_obs, "peaks": adata.n_vars,
               "pixels per section (median)": int(obs.groupby(["slide", "section"]).size().median()),
