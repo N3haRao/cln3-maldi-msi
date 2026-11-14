@@ -20,7 +20,7 @@ The recipe:
 
 "Top" and "Bottom" are the sample sheet's names for the two positions on the slide. When the
 slide was imaged rotated, they show up as left/right in the image, so always check the
-labelled figure (sections_<slide>.png) against what Pilar says.
+labelled figure (sections_<slide>.png) against the slide layout records.
 """
 from __future__ import annotations
 
