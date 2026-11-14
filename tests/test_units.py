@@ -336,3 +336,217 @@ def test_class_totals_ratios_and_sensitivity():
     assert classes.candidate_class("LPC O-16:2 [M+H]+") == "LPC"
     assert classes.candidate_class("BMP/PG 36:1 [M-H]-") == "BMP/PG"
     assert classes.candidate_class("Glycerol 3-phosphate [M-H]-") == "Glycerol 3-phosphate"
+
+
+def test_moderated_t_is_calibrated_and_more_powerful():
+    from scipy import stats as sps
+    from cln3msi import stats as st
+    rng = np.random.default_rng(3)
+    sd = np.exp(rng.normal(np.log(0.2), 0.3, 3000))
+    D = rng.normal(0, sd, (6, 3000))
+    m = st.moderated_t(D)
+    assert 0.03 < (m["p"] < 0.05).mean() < 0.07           # null p-values stay uniform
+    assert np.isfinite(m["d0"]) and m["d0"] > 1             # a real prior was estimated
+    D[:, :200] += 0.25
+    m = st.moderated_t(D)
+    pt = sps.ttest_1samp(D, 0).pvalue
+    assert (m["p"][:200] < 0.01).mean() > (pt[:200] < 0.01).mean()
+
+
+def test_gradient_correction_and_i2():
+    from cln3msi import stats as st
+    animals = pd.DataFrame({"slide": list("AABBCCDDEEFF"), "genotype": ["Control", "Mutant"] * 6,
+                            "sex": ["F"] * 6 + ["M"] * 6}, index=[f"a{i}" for i in range(12)])
+    # every pair differs by exactly the position offset: nothing should be left after correction
+    off = pd.Series({"A": 0.10, "B": 0.12, "C": 0.08, "D": 0.11, "E": 0.09, "F": 0.10})
+    v = []
+    for s in "ABCDEF":
+        v += [1.0, 1.0 + off[s]]
+    log2 = pd.DataFrame({"p1": v}, index=animals.index)
+    r = st.paired_tests(log2, animals, "Control", "Mutant", min_pairs=5, offsets=off).iloc[0]
+    assert r["log2fc"] > 0.09 and abs(r["log2fc_gradient_corrected"]) < 1e-9
+    assert np.isfinite(r["I2_sex"]) or np.isnan(r["I2_sex"])
+    g = [np.array([0.5, 0.55, 0.45]), np.array([0.0, 0.05, -0.05])]
+    assert st.i_squared(g) > 0.9 and st.i_squared([g[0], g[0] + 0.001]) < 0.1
+
+
+# ---- brain evidence (Lipid Brain Atlas reference) ------------------------------------------
+@pytest.mark.parametrize("name,expected", [
+    ("Cer d18:1/24:1", "Cer 42:2;O2"),
+    ("Hex1Cer d18:1/24:1", "HexCer 42:2;O2"),
+    ("HexCer(t42:2)", "HexCer 42:2;O3"),
+    ("SHexCer 36:1;3", "SHexCer 36:1;O3"),
+    ("SM 34:1", "SM 34:1;O2"),
+    ("SM t38:5", "SM 38:5;O3"),
+    ("PE 18:1_22:6", "PE 40:7"),
+    ("PE(O-16:1/20:4) &/or PE(P-16:0/20:4)", "PE O-36:5"),
+    ("PE(P-16:0/20:4)", "PE O-36:5"),
+    ("PC O- 36:2", "PC O-36:2"),
+    ("PC 34.1", "PC 34:1"),
+    ("LacCer(d30:0)", "Hex2Cer 30:0;O2"),
+    ("LBPA(34:1)", "BMP 34:1"),
+    ("CL 72:8_20:4", "CL 72:8"),
+    ("PS(30:3(OH))", None),
+    ("PC 38:6;O", None),
+    ("Taurine", None),
+])
+def test_canonical_names(name, expected):
+    from cln3msi import evidence
+    assert evidence.canonical(name) == expected
+
+
+def test_evidence_scoring_tiers_and_molar_fraction():
+    from cln3msi import evidence
+    R = evidence.Reference(
+        species={"msms": {"HexCer 42:2;O2", "PC 34:1", "PE 36:1"}, "lcms": {"SHexCer 42:2;O2", "PG 36:1"},
+                 "fitzner": {"HexCer 42:2;O2"}, "vandenbosch": set()},
+        covered={"HexCer", "PC", "PE", "SHexCer", "PG"},
+        quant={"PC 34:1": 9.0, "PE 36:1": 1.0, "PC 36:4": 0.5}, quant_classes={"PC", "PE"})
+    assert R.score("HexCer 42:2;O2")["evidence_score"] == 9
+    assert R.score("HexCer 42:2;O2")["confidence_tier"] == "high"
+    assert R.score("SHexCer 42:2;O2")["confidence_tier"] == "medium"
+    assert R.score("BMP/PG 36:1")["evidence_score"] == 2              # looked up as PG 36:1 too
+    assert R.score("PC 38:9")["confidence_tier"] == "database only"
+    assert R.score("GM1 36:1;O2")["confidence_tier"] == "not covered"
+    assert R.score("Herbacetin")["confidence_tier"] == "not covered"
+    assert R.resolve(["PE 36:1", "PC 34:1"]) == "PC 34:1"             # 9 / 10 = 90% > 80%
+    assert R.resolve(["PC 34:1", "PE 36:1"], fraction=0.95) is None
+    assert R.resolve(["PC 34:1", "PC 99:9"]) == "PC 34:1"             # measured class, not detected = 0
+    assert R.resolve(["PC 34:1", "SHexCer 42:2;O2"]) is None          # SHexCer not quantified
+
+
+def test_reference_folder_loads_and_validates():
+    from cln3msi import evidence
+    R = evidence.load(REPO / "reference" / "lamanno2026")
+    assert R is not None and "HexCer 42:2;O2" in R.species["msms"]
+    V = pd.read_csv(REPO / "reference" / "lamanno2026" / "validation.csv")
+    assert (V["their_high"] == V["our_high"]).mean() > 0.8
+
+
+def test_adduct_choice_keeps_one_correlated_ion():
+    from cln3msi import featureqc
+    rng = np.random.default_rng(1)
+    base = rng.gamma(2.0, 1.0, 3000) * (rng.random(3000) > 0.1)
+    X = np.column_stack([base, base * 0.3 * (rng.random(3000) > 0.4), rng.gamma(2.0, 1.0, 3000), base * 2])
+    var = pd.DataFrame({"annotation": ["PC 34:1", "PC 34:1", "PC 34:1", "PE 38:4"],
+                        "is_isotope": [False] * 4}, index=["a", "b", "c", "d"])
+    A = featureqc.adduct_choice(var, X, np.arange(4))
+    assert A.loc["a", "adduct_status"] == "chosen"            # fewest zero pixels
+    assert A.loc["b", "adduct_status"] == "redundant" and not A.loc["b", "adduct_keep"]
+    assert A.loc["c", "adduct_status"] == "kept, not correlated" and A.loc["c", "adduct_keep"]
+    assert A.loc["d", "adduct_status"] == "single"
+
+
+def test_reaction_ratios_pair_same_backbone_only():
+    from cln3msi import classes
+    ann = pd.DataFrame({"peak_id": ["p1", "p2", "p3", "p4"],
+                        "annotation": ["HexCer 42:2;O2", "Cer 42:2;O2", "HexCer 40:1;O2", "Cer 36:1;O2"]})
+    ML = pd.DataFrame([{"unit": "whole_section", "animal_id": a, "peak": p, "mean_norm_intensity": v}
+                       for a in ("x", "y") for p, v in zip(["p1", "p2", "p3", "p4"], [4.0, 2.0, 1.0, 1.0])])
+    vals, pairs = classes.reaction_ratios(ML, ann, [{"product": "HexCer", "precursor": "Cer"}], ["whole_section"])
+    assert list(pairs["feature"]) == ["HexCer/Cer 42:2;O2"]
+    assert np.allclose(vals["value"], 2.0)
+
+
+# ---- lipizones and the Bruker .d check ----------------------------------------------------
+
+def test_lipizone_levels_nest_and_follow_structure():
+    from cln3msi import lipizones
+    rng = np.random.default_rng(0)
+    # three tissue types with different lipid profiles, two slides with a scale difference
+    centres = np.array([[5, 1, 1, 1], [1, 5, 1, 1], [1, 1, 5, 5]], float)
+    truth = rng.integers(0, 3, 3000)
+    slides = np.where(np.arange(3000) < 1500, "A", "B")
+    X = centres[truth] * np.where(slides == "A", 1.0, 2.0)[:, None] + rng.gamma(2, 0.1, (3000, 4))
+    Z = lipizones.scale_features(X, slides)
+    train = lipizones.balanced_sample(slides, 800, rng)
+    fit = lipizones.fit(Z, train, [3, 6], n_pcs=3, seed=0)
+    fine, coarse = fit["labels"][6], fit["labels"][3]
+    # nesting: every fine lipizone sits in exactly one coarse lipizone
+    assert all(len(np.unique(coarse[fine == i])) == 1 for i in np.unique(fine))
+    # the coarse level recovers the three tissue types despite the slide scale difference
+    ct = pd.crosstab(truth, coarse)
+    assert (ct.max(axis=1) / ct.sum(axis=1)).min() > 0.95
+
+
+def _fake_d(tmp_path, kind="prm"):
+    import sqlite3
+    d = tmp_path / "slide_Z.d"
+    d.mkdir()
+    con = sqlite3.connect(d / "analysis.tdf")
+    con.execute("CREATE TABLE GlobalMetadata (Key TEXT, Value TEXT)")
+    con.executemany("INSERT INTO GlobalMetadata VALUES (?, ?)",
+                    [("InstrumentName", "timsTOF fleX"), ("MaldiApplicationType", "Imaging")])
+    con.execute("CREATE TABLE Frames (Id INTEGER, Polarity TEXT, ScanMode INTEGER, MsMsType INTEGER, "
+                "NumScans INTEGER, NumPeaks INTEGER, SummedIntensities INTEGER)")
+    con.execute("CREATE TABLE MaldiFrameInfo (Frame INTEGER, SpotName TEXT, RegionNumber INTEGER, "
+                "XIndexPos INTEGER, YIndexPos INTEGER)")
+    for i in range(1, 21):
+        typ = 0 if i <= 10 else (10 if kind == "prm" else 9)
+        con.execute("INSERT INTO Frames VALUES (?, '-', 9, ?, 100, 50, 1000)", (i, typ))
+        con.execute("INSERT INTO MaldiFrameInfo VALUES (?, '', 0, ?, 1)", (i, i))
+    if kind == "prm":
+        con.execute("CREATE TABLE PrmTargets (Id INTEGER, ExternalId TEXT, Time REAL, OneOverK0 REAL, "
+                    "MonoisotopicMz REAL, Charge INTEGER, Description TEXT)")
+        con.execute("INSERT INTO PrmTargets VALUES (1, 'st', 0, 1.3, 888.62, 1, 'ST 42:2')")
+        con.execute("CREATE TABLE PrmFrameMsMsInfo (Frame INTEGER, ScanNumBegin INTEGER, ScanNumEnd INTEGER, "
+                    "IsolationMz REAL, IsolationWidth REAL, CollisionEnergy REAL, Target INTEGER)")
+        for i in range(11, 21):
+            con.execute("INSERT INTO PrmFrameMsMsInfo VALUES (?, 10, 60, 888.62, 1.0, 80, 1)", (i,))
+    else:
+        con.execute("CREATE TABLE DiaFrameMsMsInfo (Frame INTEGER, WindowGroup INTEGER)")
+        con.execute("CREATE TABLE DiaFrameMsMsWindows (WindowGroup INTEGER, ScanNumBegin INTEGER, ScanNumEnd INTEGER, "
+                    "IsolationMz REAL, IsolationWidth REAL, CollisionEnergy REAL)")
+        con.executemany("INSERT INTO DiaFrameMsMsWindows VALUES (1, ?, ?, ?, 25, 60)",
+                        [(0, 50, 812.5), (50, 100, 887.5)])
+        for i in range(11, 21):
+            con.execute("INSERT INTO DiaFrameMsMsInfo VALUES (?, 1)", (i,))
+    con.commit()
+    con.close()
+    return d
+
+
+@pytest.mark.parametrize("kind", ["prm", "dia"])
+def test_bruker_metadata_and_coverage(tmp_path, kind):
+    from cln3msi import bruker
+    d = _fake_d(tmp_path, kind)
+    before = sorted(p.name for p in d.iterdir())
+    assert bruker.find_d_folders(tmp_path) == [d]
+    con = bruker.connect_ro(d / "analysis.tdf")
+    T = bruker.tables(con)
+    assert bruker.global_metadata(con, T)["InstrumentName"] == "timsTOF fleX"
+    FS = bruker.frames_summary(con, T)
+    assert int(FS.loc[FS.msms_type == ("PRM" if kind == "prm" else "DIA"), "n_frames"].sum()) == 10
+    F = bruker.frames(con, T)
+    P = bruker.precursors(con, T)
+    con.close()
+    targets = pd.DataFrame([
+        {"name": "SHexCer 42:2;O2 [M-H]-", "lipid_class": "SHexCer", "mz": 888.6230, "polarity": "negative"},
+        {"name": "same m/z, wrong polarity", "lipid_class": "SHexCer", "mz": 888.6230, "polarity": "positive"},
+        {"name": "PI 38:4 [M-H]-", "lipid_class": "PI", "mz": 885.5499, "polarity": "negative"},
+    ])
+    C = bruker.coverage(targets, P, F.set_index("Frame")["Polarity"], tol_da=0.05)
+    names = set(C["name"])
+    assert "SHexCer 42:2;O2 [M-H]-" in names and "same m/z, wrong polarity" not in names
+    # a 1 Da PRM window around 888.62 doesn't include PI 38:4 at 885.55; a 25 Da DIA window does
+    assert ("PI 38:4 [M-H]-" in names) == (kind == "dia")
+    # read-only: nothing was added to the .d folder
+    assert sorted(p.name for p in d.iterdir()) == before
+
+
+def test_diagnostic_fragments_for_sulfatide():
+    from cln3msi import bruker
+    from cln3msi.annotate import REF
+    F = bruker.load_fragments(REF / "msms_diagnostic_fragments.csv")
+    exp = bruker.expected_fragments(F, "SHexCer", "negative", 888.6230)
+    assert np.isclose(exp.loc[exp.formula == "HSO4", "fragment_mz"].iloc[0], 96.9601, atol=1e-3)
+    assert np.isclose(exp.loc[exp.formula == "C6H9O8S", "fragment_mz"].iloc[0], 241.0024, atol=1e-3)
+    mz = np.array([96.9600, 241.0025, 281.2486, 888.6230])
+    it = np.array([30.0, 100.0, 5.0, 50.0])
+    found = bruker.match_fragments(mz, it, exp, ppm=20)
+    assert found.loc[found.description.str.contains("minus water"), "found"].all()
+    assert not found.loc[found.description.str.startswith("sulfated hexose ("), "found"].any()
+    # PI's 241.011 is 39 ppm away from the sulfatide ion: not matched at 20 ppm
+    pi = bruker.expected_fragments(F, "PI", "negative", 885.55)
+    got = bruker.match_fragments(np.array([241.0025]), np.array([1.0]), pi, ppm=20)
+    assert not got.loc[got.description.str.contains("241.01"), "found"].any()
