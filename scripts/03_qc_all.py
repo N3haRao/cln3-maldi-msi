@@ -30,7 +30,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, qc, samples  # noqa: E402
+from cln3msi import cli, figstyle, qc, samples  # noqa: E402
 from cln3msi.report import Summary, decimate, plt  # noqa: E402
 from cln3msi.tissue import BOTTOM, TOP  # noqa: E402
 
@@ -82,13 +82,17 @@ def main():
 
         # ---- figures ---------------------------------------------------------------------
         slides = list(results)
-        fig, axes = plt.subplots(1, len(slides), figsize=(2.6 * len(slides), 3.6), squeeze=False)
+        um = float(ctx.get("acquisition.pixel_size_um", 50))
+        shp = [np.load(ctx.out("processed", mode, "qc", f"sections_{s}.npz", mkdir=False))["positions"].shape for s in slides]
+        fig, axes = figstyle.image_grid(1, len(slides), 1.9, float(np.median([h / w for h, w in shp])), title_h=0.25)
         for ax, s in zip(axes[0], slides):
             z = np.load(ctx.out("processed", mode, "qc", f"sections_{s}.npz", mkdir=False))
             img = np.zeros(z["positions"].shape)
             img[z["positions"] == TOP] = 1
             img[z["positions"] == BOTTOM] = 2
-            ax.imshow(img, cmap="coolwarm", vmin=0, vmax=2, interpolation="nearest")
+            from matplotlib.colors import ListedColormap
+            ax.imshow(img, cmap=ListedColormap(["#F2F2F2", figstyle.TOP, figstyle.BOTTOM]), vmin=-0.5, vmax=2.5,
+                      interpolation="nearest")
             sub = sheet[sheet.slide == s].set_index("position_on_slide")
             for code, posname in ((TOP, "Top"), (BOTTOM, "Bottom")):
                 yy, xx = np.nonzero(z["positions"] == code)
@@ -96,52 +100,75 @@ def main():
                     g = sub.loc[posname, "genotype"]
                     lab = ctx.cfg["project"]["mutant_label"] if g == ctx.cfg["project"]["genotypes"]["mutant"] else g
                     ax.text(xx.mean(), yy.mean(), f"{sub.loc[posname, 'animal_id']}\n{lab}", ha="center",
-                            va="center", fontsize=7, bbox=dict(facecolor="white", alpha=0.8, lw=0))
-            ax.set_title(f"slide {s}", fontsize=9)
-            ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
-        fig.suptitle(f"{mode}: section assignment on every slide (blue = Top, red = Bottom)", fontsize=10)
-        S.fig(fig, "sections_all.png")
+                            va="center", fontsize=6.5, bbox=dict(facecolor="white", alpha=0.85, lw=0,
+                                                                  boxstyle="round,pad=0.25"))
+            ax.set_title(f"Slide {s}")
+            figstyle.image_axes(ax)
+            figstyle.scalebar(ax, um)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: section assignment on every slide",
+                       "Blue, Top section; vermillion, Bottom section")
+        S.fig(fig, "sections_all.png", caption=(
+            "Tissue sections found on each slide and their assignment to the sample sheet's Top and Bottom "
+            "positions (blue, Top; vermillion, Bottom; grey, bare glass). Labels give the animal ID and genotype "
+            "taken from the sample sheet. Scale bar, 1 mm."))
 
-        fig, ax = plt.subplots(figsize=(7, 3.5))
+        fig, ax = plt.subplots(figsize=(6, 3.2))
         for s in slides:
             sub = good[good.slide == s]
-            ax.scatter(sub.theoretical_mz, sub.ppm_error, s=14, label=s)
+            ax.scatter(sub.theoretical_mz, sub.ppm_error, s=14, label=f"Slide {s}", edgecolors="0.2", linewidths=0.3)
         ax.axhline(0, color="k", lw=0.5)
-        ax.set_xlabel("m/z"); ax.set_ylabel("ppm error")  # noqa: E702
-        ax.set_title(f"{mode}: calibrant mass error per slide", fontsize=9)
-        ax.legend(fontsize=7, ncol=3, loc="upper right")
-        S.fig(fig, "mass_error_all.png")
+        ax.set_xlabel("m/z"); ax.set_ylabel("Mass error (ppm)")  # noqa: E702
+        ax.legend(ncol=3, loc="upper right")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: calibrant mass accuracy")
+        S.fig(fig, "mass_error_all.png", caption=(
+            "Mass error (observed minus theoretical m/z, ppm) of the calibrant ions on each slide, before "
+            "recalibration. A constant offset per slide is removed in phase 04; the remaining spread sets the "
+            "annotation tolerance."))
 
-        fig, axes = plt.subplots(len(slides), 1, figsize=(12, 1.4 * len(slides)), sharex=True, squeeze=False)
+        fig, axes = plt.subplots(len(slides), 1, figsize=(10, 1.1 * len(slides) + 0.6), sharex=True, squeeze=False)
         for ax, s in zip(axes[:, 0], slides):
             z = np.load(ctx.out("processed", mode, "qc", f"meanspec_{s}.npz", mkdir=False))
-            for g, col in (("Top", "tab:blue"), ("Bottom", "tab:red")):
+            for g, col in (("Top", figstyle.TOP), ("Bottom", figstyle.BOTTOM)):
                 if g in z:
                     sp = z[g] / max(z[g].sum(), 1e-12)     # TIC-scaled so slides are comparable
-                    ax.plot(*decimate(z["axis"], sp), lw=0.5, color=col)
-            ax.set_ylabel(s, rotation=0, labelpad=12)
+                    ax.plot(*decimate(z["axis"], sp), lw=0.5, color=col, label=f"{g} section", alpha=0.85)
+            ax.set_ylabel(f"Slide {s}", rotation=0, labelpad=22, va="center")
             ax.set_yticks([])
+            ax.spines["left"].set_visible(False)
+        axes[0, 0].legend(loc="upper right", ncol=2)
         axes[-1, 0].set_xlabel("m/z")
-        fig.suptitle(f"{mode}: TIC-scaled mean spectra per slide (blue Top, red Bottom)", fontsize=10)
-        S.fig(fig, "mean_spectra_all.png")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: mean spectra per slide")
+        S.fig(fig, "mean_spectra_all.png", caption=(
+            "Mean tissue spectrum of the Top (blue) and Bottom (vermillion) section of each slide, each scaled to "
+            "a total of 1 so slides are comparable. Max-pooled for display."))
 
-        fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
+        fig, axes = plt.subplots(1, 2, figsize=(9, 3.2), gridspec_kw={"wspace": 0.35})
         secs["label"] = secs["slide"] + " " + secs["position"].str[0]
         axes[0].bar(secs["label"], secs["median_tic"],
-                    color=["tab:blue" if p == "Top" else "tab:red" for p in secs["position"]])
-        axes[0].set_title("median TIC per section", fontsize=9)
-        axes[0].tick_params(axis="x", rotation=90, labelsize=7)
+                    color=[figstyle.TOP if p == "Top" else figstyle.BOTTOM for p in secs["position"]])
+        axes[0].set_title("Median TIC per section")
+        axes[0].set_ylabel("Median total ion current (a.u.)")
+        axes[0].set_xlabel("Section (slide, T = Top, B = Bottom)")
+        axes[0].tick_params(axis="x", rotation=90)
         col = "matrix_off_pred_log2_bottom_vs_top"
         if col in grad:
-            axes[1].bar(grad["slide"], grad[col], color="0.4", label="off-tissue DAN trend")
+            axes[1].bar(grad["slide"], grad[col], color="0.65", label="Off-tissue DAN trend")
         if "tic_off_pred_log2_bottom_vs_top" in grad:
             axes[1].scatter(grad["slide"], grad["tic_off_pred_log2_bottom_vs_top"], color="k", zorder=3,
-                            label="off-tissue TIC trend")
+                            label="Off-tissue TIC trend")
         axes[1].axhline(0, color="k", lw=0.5)
-        axes[1].set_ylabel("predicted log2(Bottom / Top)")
-        axes[1].set_title("top-to-bottom technical trend, per slide", fontsize=9)
-        axes[1].legend(fontsize=7, loc="upper right")
-        S.fig(fig, "gradient_all.png")
+        axes[1].set_ylabel("Predicted log2(Bottom / Top)")
+        axes[1].set_xlabel("Slide")
+        axes[1].set_title("Technical Top-to-Bottom trend")
+        axes[1].legend(loc="best")   # placed where it covers no bar
+        figstyle.panel_labels(axes, x=-0.16)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: signal level and position trend")
+        S.fig(fig, "gradient_all.png", caption=(
+            "(A) Median total ion current of each section (blue, Top = Control; vermillion, Bottom = CLN3 KO). "
+            "(B) Technical trend between the two section positions on each slide, from a linear fit of the "
+            "off-tissue matrix (DAN) signal and off-tissue TIC along the slide, expressed as the log2 ratio it "
+            "predicts between the Bottom and the Top section. Because genotype and position coincide, a hit "
+            "smaller than about twice this trend is flagged as possibly positional."))
 
         # ---- summary --------------------------------------------------------------------
         S.h("Slides")
