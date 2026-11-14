@@ -29,7 +29,7 @@ from statsmodels.stats.multitest import multipletests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, spatial  # noqa: E402
+from cln3msi import cli, figstyle, spatial  # noqa: E402
 from cln3msi.util import read_h5ad  # noqa: E402
 from cln3msi.images import section_image  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
@@ -145,51 +145,80 @@ def main():
         comp.to_csv(ctx.out("results", "08_explore", mode, "territory_composition.csv"))
 
         # ---- figures ---------------------------------------------------------------------
-        fig, ax = plt.subplots(figsize=(7, max(3, 0.18 * min(40, len(agg)))))
+        fig, ax = plt.subplots(figsize=(5.5, max(3, 0.16 * min(40, len(agg)) + 0.8)))
         top = agg.head(40)
         ax.barh(top["label"][::-1], top["I_median"][::-1],
-                color=["tab:green" if s else "0.6" for s in top["selected"][::-1]])
-        ax.axvline(float(M["min_I"]), color="k", lw=0.5, ls="--")
-        ax.set_xlabel("median Moran's I across sections (green = selected)")
+                color=[figstyle.OKABE_ITO[2] if s else "0.75" for s in top["selected"][::-1]], height=0.75)
+        ax.axvline(float(M["min_I"]), color="k", lw=0.6, ls="--")
+        ax.set_xlabel("Median Moran's I across sections")
         ax.tick_params(axis="y", labelsize=6)
-        S.fig(fig, "morans_i.png")
+        ax.margins(y=0.01)
+        from matplotlib.patches import Patch
+        ax.legend(handles=[Patch(color=figstyle.OKABE_ITO[2], label="Spatially structured"),
+                           Patch(color="0.75", label="Not selected")], loc="lower right")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: spatial autocorrelation")
+        S.fig(fig, "morans_i.png", caption=(
+            f"The {len(top)} peaks with the highest median Moran's I (spatial autocorrelation on a "
+            f"{M['k_neighbors']}-nearest-neighbour pixel graph, computed per section). Green, peaks counted as spatially "
+            f"structured: I \u2265 {M['min_I']} in at least {float(M['min_section_fraction']):.0%} of sections "
+            "(dashed line, the threshold). Isotope peaks excluded."))
 
-        fig, ax = plt.subplots(figsize=(4, 3))
-        ax.plot(list(errs), list(errs.values()), marker="o")
-        ax.axvline(k_use, color="tab:red", ls="--")
-        ax.set_xlabel("k (programs)"); ax.set_ylabel("NMF reconstruction error")  # noqa: E702
-        S.fig(fig, "nmf_k.png")
+        fig, ax = plt.subplots(figsize=(3.6, 2.8))
+        ax.plot(list(errs), list(errs.values()), marker="o", color="0.25")
+        ax.axvline(k_use, color=figstyle.MUTANT, ls="--", label=f"Chosen k = {k_use}")
+        ax.set_xlabel("Number of programs (k)"); ax.set_ylabel("NMF reconstruction error")  # noqa: E702
+        ax.legend(loc="upper right")
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: choice of k")
+        S.fig(fig, "nmf_k.png", caption=(
+            "Reconstruction error of non-negative matrix factorization against the number of lipid programs, fitted "
+            "on Control pixels; k was chosen at the elbow of the curve (dashed line)."))
 
-        fig, ax = plt.subplots(figsize=(min(16, 0.35 * H.shape[1] + 3), 0.4 * k_use + 2))
-        im = ax.imshow(H.to_numpy() / (H.to_numpy().max(axis=1, keepdims=True) + 1e-12), aspect="auto", cmap="viridis")
-        ax.set_yticks(range(k_use), H.index, fontsize=7)
+        fig, ax = plt.subplots(figsize=(min(16, 0.3 * H.shape[1] + 3), 0.35 * k_use + 2.2))
+        im = ax.imshow(H.to_numpy() / (H.to_numpy().max(axis=1, keepdims=True) + 1e-12), aspect="auto", cmap="viridis",
+                       vmin=0, vmax=1)
+        ax.set_yticks(range(k_use), [f"Program {i + 1}" for i in range(k_use)], fontsize=7)
         ax.set_xticks(range(H.shape[1]), H.columns, rotation=90, fontsize=6)
-        plt.colorbar(im, ax=ax, fraction=0.03)
-        ax.set_title("NMF programs (rows scaled to max 1)", fontsize=9)
-        S.fig(fig, "nmf_programs.png")
+        figstyle.colorbar(fig, im, ax, "Loading (row max = 1)", fraction=0.025)
+        for sp in ax.spines.values():
+            sp.set_visible(False)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: lipid programs (NMF loadings)")
+        S.fig(fig, "nmf_programs.png", caption=(
+            f"Loadings of the {k_use} lipid programs found by seeded non-negative matrix factorization of the spatially "
+            "structured peaks on Control pixels (each peak divided by its per-slide median, then scaled 0 to 1). Each "
+            "row is scaled to its maximum; bright cells are the lipids that define a program."))
 
         secs = list(keys)
         show_p = order[:min(4, k_use)]
-        fig, axes = plt.subplots(len(show_p) + 1, len(secs), figsize=(1.5 * len(secs), 1.4 * (len(show_p) + 1)),
-                                 squeeze=False)
+        asp = figstyle.section_aspect(obs)
+        fig, axes = figstyle.image_grid(len(show_p) + 1, len(secs), 1.2, asp, title_h=0.06, wspace_in=0.04)
         n_terr = int(terr.max())
-        cmap_t = plt.get_cmap("tab20", max(n_terr, 2))
+        from matplotlib.colors import ListedColormap
+        from cln3msi import lipizones as _lz
+        cmap_t = ListedColormap(_lz.palette(max(n_terr, 2)))
+        um = float(ctx.get("acquisition.pixel_size_um", 50))
         for b, (slide, section) in enumerate(secs):
             for r_, pi in enumerate(show_p):
                 img, *_ = section_image(obs, W_all[:, pi], slide, section)
                 axes[r_, b].imshow(img, cmap="magma", vmin=0, vmax=np.percentile(W_all[:, pi], 99), interpolation="nearest")
                 if b == 0:
-                    axes[r_, b].set_ylabel(f"prog {pi + 1}", fontsize=7)
+                    axes[r_, b].set_ylabel(f"Program {pi + 1}", fontsize=7)
             img, *_ = section_image(obs, terr.astype(float), slide, section)
             axes[-1, b].imshow(img, cmap=cmap_t, vmin=0.5, vmax=n_terr + 0.5, interpolation="nearest")
             g = obs.loc[(obs.slide == slide) & (obs.section == section), "genotype"].iloc[0]
-            axes[0, b].set_title(f"{slide} {section[0]}\n{'KO' if g != ctl else 'Ctl'}", fontsize=7)
+            axes[0, b].set_title(f"{slide} {'KO' if g != ctl else 'Control'}", fontsize=6.5, fontweight="normal",
+                                 color=figstyle.MUTANT if g != ctl else figstyle.CONTROL)
             if b == 0:
-                axes[-1, b].set_ylabel("territory", fontsize=7)
+                axes[-1, b].set_ylabel("Territory", fontsize=7)
         for ax in axes.ravel():
-            ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
-        fig.suptitle(f"{mode}: top NMF programs and territories (learned on Control, transferred)", fontsize=9)
-        S.fig(fig, "programs_territories.png")
+            figstyle.image_axes(ax)
+        figstyle.scalebar(axes[-1, -1], um)
+        figstyle.title(fig, f"{figstyle.mode_name(mode)}: lipid programs and territories",
+                       "Learned on Control sections, transferred to all pixels")
+        S.fig(fig, "programs_territories.png", caption=(
+            f"Top rows: activity of the {len(show_p)} most variable lipid programs (NMF) in every section, each on one "
+            f"colour scale (0 to the 99th percentile). Bottom row: the {n_terr} lipid territories from Leiden clustering "
+            "of program activities on a Control pixel subsample, assigned to all other pixels by nearest-neighbour vote. "
+            "Columns are the Control and KO section of each slide. Scale bar, 1 mm."))
 
         S.h("Moran's I")
         S.kv({"lipids tested (no isotopes)": len(feats), "selected (spatially structured)": int(agg.selected.sum()),
