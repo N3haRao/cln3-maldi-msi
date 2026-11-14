@@ -20,7 +20,7 @@ import pandas as pd
 import yaml
 from scipy import stats
 
-from . import chem, samples, spectra
+from . import chem, figstyle, samples, spectra
 from .config import REPO_ROOT
 from .imzml_io import SlideReader, detect_profile
 from .report import Summary, decimate, plt
@@ -260,83 +260,114 @@ def _figures(S, r, slide, tic, matrix_sum, nonmatrix, seg, animal_of, geno_of, a
     mut, ctl = ctx.cfg["project"]["mutant_label"], ctx.cfg["project"]["control_label"]
     label = {ctx.cfg["project"]["genotypes"]["mutant"]: mut, ctx.cfg["project"]["genotypes"]["control"]: ctl}
 
+    um = float(ctx.get("acquisition.pixel_size_um", 50))
+
     # images
-    fig, axes = plt.subplots(1, 3, figsize=(11, 4))
-    for ax, v, t in zip(axes, (tic, nonmatrix, matrix_sum), ("TIC", "TIC without DAN ions", "DAN matrix ions")):
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3.4))
+    for ax, v, t in zip(axes, (tic, nonmatrix, matrix_sum), ("Total ion current", "TIC without matrix (DAN) ions",
+                                                              "Matrix (DAN) ions")):
         im = ax.imshow(np.log1p(r.to_image(v)), cmap="magma", interpolation="nearest")
-        ax.set_title(f"{slide}: log {t}", fontsize=9)
-        plt.colorbar(im, ax=ax, fraction=0.04)
-        ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
-    S.fig(fig, f"images_{slide}.png")
+        ax.set_title(t)
+        figstyle.colorbar(fig, im, ax, "log(1 + intensity)")
+        figstyle.image_axes(ax)
+        figstyle.scalebar(ax, um, color="white")
+    figstyle.panel_labels(axes, x=0.0)
+    figstyle.title(fig, f"Slide {slide}: signal overview")
+    S.fig(fig, f"images_{slide}.png", caption=(
+        f"Slide {slide}, whole acquired raster. (A) Total ion current per pixel. (B) Total ion current after removing "
+        "the known 1,5-diaminonaphthalene (DAN) matrix ions, the signal used to find tissue. (C) Summed DAN matrix "
+        "ions; bare glass is bright, tissue is darker. All panels log(1 + intensity). Scale bar, 1 mm."))
 
     # labelled sections: THE figure to check Top = Control, Bottom = Mutant
     h, w = seg["positions"].shape
-    fig, ax = plt.subplots(figsize=(min(10, 6 * w / h), 6) if w > h else (5, 6))
+    fig, ax = plt.subplots(figsize=(min(9, 5.5 * w / h), 5.2) if w > h else (4.5, 5.5))
     show = np.ma.masked_equal(seg["positions"].astype(float), 0)
     ax.imshow(np.log1p(r.to_image(nonmatrix)), cmap="Greys_r", interpolation="nearest")
-    ax.imshow(show, cmap="coolwarm", alpha=0.45, vmin=1, vmax=2, interpolation="nearest")
+    from matplotlib.colors import ListedColormap
+    ax.imshow(show, cmap=ListedColormap([figstyle.TOP, figstyle.BOTTOM]), alpha=0.4, vmin=1, vmax=2,
+              interpolation="nearest")
     for code in (TOP, BOTTOM):
         yy, xx = np.nonzero(seg["positions"] == code)
         if len(yy):
             ax.text(xx.mean(), yy.mean(), f"{POSITION_NAME[code]}\n{animal_of[code]}\n{label.get(geno_of[code], geno_of[code])}",
-                    ha="center", va="center", fontsize=10, weight="bold",
-                    bbox=dict(facecolor="white", alpha=0.8, lw=0))
-    ax.set_title(f"slide {slide}: section assignment ({seg['how']})\n"
-                 "image shown as stored in the imzML (row 0 at the top, column 0 on the left).\n"
-                 "Check the labels against Pilar's layout; flip in the config if they're swapped", fontsize=8)
-    S.fig(fig, f"sections_{slide}.png")
+                    ha="center", va="center", fontsize=9, weight="bold",
+                    bbox=dict(facecolor="white", alpha=0.85, lw=0, boxstyle="round,pad=0.3"))
+    figstyle.image_axes(ax)
+    figstyle.scalebar(ax, um, color="white")
+    figstyle.title(fig, f"Slide {slide}: section assignment", f"Split found by: {seg['how']}")
+    S.fig(fig, f"sections_{slide}.png", caption=(
+        f"Assignment of the two tissue sections on slide {slide} to animals. Greyscale: non-matrix ion current. "
+        f"Blue overlay, the section matched to the sample sheet's Top position; vermillion, Bottom. The image is "
+        "shown as stored in the imzML file (row 0 at the top, column 0 on the left). Labels give position, animal "
+        "ID and genotype; check them against the slide layout before trusting any statistics. Scale bar, 1 mm."))
 
     # mean spectra
-    fig, ax = plt.subplots(figsize=(12, 4))
-    colors = {"Top": "tab:blue", "Bottom": "tab:red", "off": "0.5"}
+    fig, ax = plt.subplots(figsize=(10, 3.2))
+    colors = {"Top": figstyle.TOP, "Bottom": figstyle.BOTTOM, "off": figstyle.GREY}
+    names = {"Top": "Top section", "Bottom": "Bottom section", "off": "Off tissue"}
     for g, sp in means.items():
-        ax.plot(*decimate(axis, sp), lw=0.6, color=colors[g], label=g, alpha=0.8)
-    for _, c in cal_df.drop_duplicates("name").iterrows():
-        ax.axvline(c.theoretical_mz, color="green", lw=0.5, ls=":")
-    for _, m in mx_df.iterrows():
-        ax.axvline(m.theoretical_mz, color="purple", lw=0.5, ls="--")
-    ax.set_xlabel("m/z"); ax.set_ylabel("mean intensity")  # noqa: E702
-    ax.set_title(f"slide {slide}: mean spectra (green dotted = calibrants, purple dashed = DAN ions)", fontsize=9)
-    ax.legend(fontsize=8, loc="upper right")
-    S.fig(fig, f"mean_spectrum_{slide}.png")
+        ax.plot(*decimate(axis, sp), lw=0.5, color=colors[g], label=names.get(g, g), alpha=0.85)
+    for i, (_, c) in enumerate(cal_df.drop_duplicates("name").iterrows()):
+        ax.axvline(c.theoretical_mz, color=figstyle.OKABE_ITO[2], lw=0.5, ls=":", label="Calibrant ions" if i == 0 else None)
+    for i, (_, m) in enumerate(mx_df.iterrows()):
+        ax.axvline(m.theoretical_mz, color=figstyle.OKABE_ITO[3], lw=0.5, ls="--", label="DAN matrix ions" if i == 0 else None)
+    ax.set_xlabel("m/z"); ax.set_ylabel("Mean intensity (a.u.)")  # noqa: E702
+    ax.legend(loc="upper right", ncol=2)
+    figstyle.title(fig, f"Slide {slide}: mean spectra")
+    S.fig(fig, f"mean_spectrum_{slide}.png", caption=(
+        f"Mean spectrum of the Top section, the Bottom section and the off-tissue pixels of slide {slide}. "
+        "Dotted green lines mark the calibrant ions used to measure mass accuracy, dashed purple lines the "
+        "DAN matrix ions. Spectra are max-pooled for display only."))
 
     if len(cal_df):
-        fig, ax = plt.subplots(figsize=(7, 3.5))
+        fig, ax = plt.subplots(figsize=(6.5, 3.2))
         for g, mk in (("Top", "o"), ("Bottom", "s")):
             sub = cal_df[cal_df.section == g]
-            ax.scatter(sub.theoretical_mz, sub.ppm_error, marker=mk, label=g,
-                       c=np.log10(sub.snr.clip(lower=1)), cmap="viridis")
+            sc = ax.scatter(sub.theoretical_mz, sub.ppm_error, marker=mk, label=f"{g} section", s=18,
+                            c=np.log10(sub.snr.clip(lower=1)), cmap="viridis", edgecolors="0.2", linewidths=0.3)
         ax.axhline(0, color="k", lw=0.5)
-        ax.set_xlabel("m/z"); ax.set_ylabel("ppm error (observed - theoretical)")  # noqa: E702
-        ax.set_title(f"slide {slide}: calibrant mass error (colour = log10 SNR)", fontsize=9)
-        ax.legend(fontsize=8, loc="upper right")
-        S.fig(fig, f"mass_error_{slide}.png")
+        ax.set_xlabel("m/z"); ax.set_ylabel("Mass error (ppm)")  # noqa: E702
+        figstyle.colorbar(fig, sc, ax, "log10 signal-to-noise")
+        ax.legend(loc="upper right")
+        figstyle.title(fig, f"Slide {slide}: calibrant mass accuracy")
+        S.fig(fig, f"mass_error_{slide}.png", caption=(
+            f"Mass error (observed minus theoretical m/z, in ppm) of each calibrant ion found on slide {slide}, per "
+            "section (circles Top, squares Bottom), coloured by signal-to-noise. The median error sets the per-slide "
+            "recalibration; the spread sets the annotation tolerance."))
 
     if len(widths):
-        fig, ax = plt.subplots(figsize=(6, 3.5))
-        ax.scatter(widths["mz"], widths["mz"] / widths["fwhm"], s=4, alpha=0.4)
-        ax.set_xlabel("m/z"); ax.set_ylabel("resolving power m/FWHM")  # noqa: E702
-        ax.set_title(f"slide {slide}: {res.get('analyzer_hint', '')}", fontsize=9)
-        S.fig(fig, f"resolution_{slide}.png")
+        fig, ax = plt.subplots(figsize=(5.5, 3.2))
+        ax.scatter(widths["mz"], widths["mz"] / widths["fwhm"], s=5, alpha=0.4, color=figstyle.CONTROL,
+                   edgecolors="none", rasterized=True)
+        ax.set_xlabel("m/z"); ax.set_ylabel("Resolving power (m / FWHM)")  # noqa: E702
+        figstyle.title(fig, f"Slide {slide}: mass resolving power", res.get("analyzer_hint", "") or None)
+        S.fig(fig, f"resolution_{slide}.png", caption=(
+            f"Resolving power (m/z divided by the full width at half maximum) of peaks in high-signal single spectra "
+            f"of slide {slide}. The trend with m/z indicates the analyzer type: resolving power falls with m/z on "
+            "Orbitrap and FT-ICR instruments and stays roughly flat or rises on a time-of-flight (QTOF)."))
 
     # profiles between the two section positions: is there a trend in the off-tissue matrix signal?
-    fig, ax = plt.subplots(figsize=(6, 3.5))
+    fig, ax = plt.subplots(figsize=(5.5, 3.2))
     nb = int(ctx.get("qc.gradient.n_bins_y", 20))
     bins = np.linspace(rows_spec.min(), rows_spec.max() + 1, nb + 1)
     cen = (bins[:-1] + bins[1:]) / 2
-    for sel, v, name in ((pos_spec == 0, matrix_sum, "DAN ions, off tissue"),
-                         (pos_spec == 0, tic, "TIC, off tissue"), (pos_spec > 0, tic, "TIC, tissue")):
+    for (sel, v, name), col in zip(((pos_spec == 0, matrix_sum, "DAN ions, off tissue"),
+                                    (pos_spec == 0, tic, "TIC, off tissue"), (pos_spec > 0, tic, "TIC, tissue")),
+                                   (figstyle.OKABE_ITO[3], figstyle.GREY, figstyle.OKABE_ITO[2])):
         if sel.sum() < 10:
             continue
         b = np.digitize(rows_spec[sel], bins) - 1
         med = [np.median(v[sel][b == k]) if (b == k).sum() >= 3 else np.nan for k in range(nb)]
-        ax.plot(cen, np.log2(np.asarray(med) + 1), marker="o", ms=3, label=name)
-    which = "image row" if seg["axis"] == "rows" else "image column"
-    ax.set_xlabel(f"{which} (Top section side -> Bottom section side is the order shown in sections_{slide}.png)", fontsize=7)
+        ax.plot(cen, np.log2(np.asarray(med) + 1), marker="o", ms=3, label=name, color=col)
+    which = "Image row" if seg["axis"] == "rows" else "Image column"
+    ax.set_xlabel(f"{which} (Top section side to Bottom section side)")
     ax.set_ylabel("log2 median intensity")
-    ax.set_title(f"slide {slide}: profiles along the {which}s (the direction separating the sections)", fontsize=9)
-    ax.legend(fontsize=7, loc="upper right")
-    S.fig(fig, f"y_profile_{slide}.png")
+    ax.legend(loc="best")
+    figstyle.title(fig, f"Slide {slide}: signal along the Top-to-Bottom axis")
+    S.fig(fig, f"y_profile_{slide}.png", caption=(
+        f"Median signal in bins along the axis that separates the two sections of slide {slide}. A slope in the "
+        "off-tissue DAN signal means a technical trend (matrix coating or instrument drift) that would look like a "
+        "genotype difference, because Control is always on the Top and CLN3 KO on the Bottom."))
 
 
 def suggest_tolerance(ppm_errors: np.ndarray, floor: float) -> dict:
