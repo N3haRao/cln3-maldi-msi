@@ -12,11 +12,22 @@ project:
   genotypes: {control: "Control", mutant: "Mutant"}   # values used in the sample sheet
 
 paths:
-  data_root: "path/BRAIN - PILAR - SPATIAL"
+  # The folder that CONTAINS "imzML files for biostats". Examples (pick the one for the
+  # machine you run on):
+  #   Mac, copied to the Desktop:   "/Users/your_name/Desktop/MSI_data"
+  #   Mac, external drive:          "/Volumes/<drive name>/MSI_data"
+  #   Windows:                      "D:/MSI_data"   (forward slashes are fine)
+  # Only the imzML subfolder is read (plus the SCiLS exports if scils_crosscheck is on).
+  # Nothing is ever written here. Keep the exact upper case: the Mac doesn't care, a Linux/HPC
+  # filesystem does.
+  data_root: "/path/to/data_root"                     # EDIT: see above
   imzml_subdir: "imzML files for biostats"
-  output_root: "path/cln3_msi_outputs"      # everything the pipeline writes goes here
+  output_root: "~/cln3_msi_outputs"                   # everything the pipeline writes goes here (~ = your home)
   cache_root: null                   # null means <output_root>/cache (LIPID MAPS, HMDB, atlas)
   sample_sheet: "metadata/sample_sheet.csv"           # relative paths are relative to the repo
+  # Raw Bruker .d folders, only for the MS/MS check (scripts/tools/inspect_bruker_d.py). Read
+  # only, like data_root. null = not set (pass --d-root instead).
+  bruker_d_root: null                                 # e.g. "/path/to/raw_d"; on a cluster: config.hpc.yaml
 
 modes:
   run: [lip_neg, lip_pos, met_neg]   # which modes phases 03 to 10 loop over
@@ -33,10 +44,8 @@ acquisition:                         # what we were told. pixel_size_um and matr
   matrix: "DAN"
   matrix_formula: "C10H10N2"         # 1,5-diaminonaphthalene
   bregma_mm: [-1.58, -2.18]
-  # Instrument, inferred from the Bruker method files Pilar shared for a later cerebellum run
-  # (09SEP26/.../microTOFQImpacTemAcquisition.method, analysis.tdf): a Bruker timsTOF (fleX),
-  # i.e. a QTOF. Not confirmed for slides E-K; 01/02 log what the imzML headers and the peak
-  # widths actually say.
+  # Instrument, as far as known: a Bruker timsTOF fleX (QTOF). 01/02 log what the imzML headers
+  # and the peak widths actually say.
   instrument_expected: "Bruker timsTOF fleX (QTOF), to confirm"
 
 runtime:
@@ -59,7 +68,9 @@ qc:
     smooth_sigma_px: 1.0
     min_object_px: 100
     close_radius_px: 2               # joins pieces of a section that got cut apart
-    erode_edge_px: 1                 # pixels on the tissue edge are left out of statistics
+    erode_edge_px: 3                 # pixels on the tissue edge are left out of statistics. Was 1;
+                                     # bright rims at the section edges (slides E, F) showed up among
+                                     # the top hits, so 3 px (150 um) are left out now
   sections:
     n_expected: 2
     # Which way the two sections are separated in the image: auto, rows (one above the other)
@@ -68,7 +79,7 @@ qc:
     split_axis: auto
     # true: the section with the smaller row/column index (upper one, or LEFT one when side by
     # side) is the sample sheet's "Top" (= Control). false: the other way round.
-    # CHECK sections_<slide>.png against Pilar's layout before trusting the statistics.
+    # CHECK sections_<slide>.png against the slide layout records before trusting the statistics.
     top_is_low_index: true
     flip_slides: []                  # e.g. ["J"] if one slide turns out reversed
     manual_split: {}                 # e.g. {E: 170}: force the split at row/column 170 on slide E
@@ -85,7 +96,18 @@ peaks:
   recalibrate_per_slide: true        # shift each slide by its median calibrant ppm error (from 03)
   min_section_fraction: 0.5          # keep a peak if it is picked in at least this fraction of sections
   min_pixel_fraction: 0.01           # and present (>0) in at least this fraction of tissue pixels of those sections
-  max_peaks: 2000                    # safety cap, strongest peaks kept
+  max_peaks: 4000                    # safety cap, strongest peaks kept. Was 2000, which all three modes
+                                     # hit; the untargeted test family is limited separately
+                                     # (differential.untargeted_peaks), so more peaks don't dilute it
+  # Peaks that are as strong on the bare glass as on the tissue are matrix (DAN clusters and
+  # adducts the known-ion list misses). Ratio = off-tissue / on-tissue mean signal in the peak's
+  # window, median over slides. Such peaks are moved out of the matrix like the DAN ions.
+  # OFF: on the real data the off-tissue pixels sit right next to the tissue (the raster hugs
+  # it), so delocalized tissue lipids (PI 38:4, PE 38:4, DHA, ...) scored 0.6-0.95 and 3,292 of
+  # 4,000 lipid-negative peaks were removed, which also changed TIC normalization and broke the
+  # registration of slide E Control. off_on_ratio is still computed and saved in
+  # peaks_all_candidates.csv (and reported), so matrix-like peaks can be checked by hand.
+  matrix_filter: {enabled: false, max_off_on_ratio: 1.5}
 
 annotation:
   ppm_tolerance: null                # null means use the 02/03 suggestion, otherwise a number
@@ -100,6 +122,10 @@ annotation:
         GM2: ["[M-2H]2-"]
         GM3: ["[M-2H]2-"]
         GD1: ["[M-2H]2-"]
+        GD2: ["[M-2H]2-"]
+        GD3: ["[M-2H]2-"]
+        GT1: ["[M-2H]2-"]
+        CL: ["[M-2H]2-"]
         # choline lipids have no acidic proton: in negative mode they show up as [M-CH3]-
         # (and [M+Cl]-), never as [M-H]-. Note SM 36:1 [M-CH3]- has exactly the formula of
         # "SM 35:1 [M-H]-", so allowing [M-H]- here invents odd-chain SMs.
@@ -116,16 +142,38 @@ annotation:
         SM: ["[M-H]-"]
         LPC: ["[M-H]-"]
         LSM: ["[M-H]-"]
+        CAR: ["[M-H]-"]                 # acylcarnitines are zwitterions; read them in positive mode
       positive:
         SHexCer: ["[M+H]+", "[M+Na]+", "[M+K]+"]   # sulfatides are anions; read them in negative mode
   lipidmaps_filter: true             # keep only compositions whose formula exists in the cached LMSD
+  # Second pass for peaks still unnamed: match against every LIPID MAPS structure and every
+  # SwissLipids species (both cached by 00_setup). Reaches classes the rules don't cover.
+  # These names are untagged (never in the hypothesis families) and marked in annotation_source.
+  second_pass: true
   metabolite_db: "hmdb"              # hmdb (cached in 00) or curated (reference/metabolites_curated.csv)
   max_candidates_reported: 5
+  # Evidence that a named lipid exists in mouse brain, from the Lipid Brain Atlas paper
+  # (Nature 2026, doi:10.1038/s41586-026-11050-0, CC BY 4.0), reference/lamanno2026/.
+  # Scored as in the paper: LC-MS/MS 8, LC-MS 2, each published dataset 1, database only 0
+  # (their METASPACE term left out). Gives evidence_score / confidence_tier (high = score > 4).
+  # resolve_ambiguous: for a peak with several candidate compositions, all in classes their
+  # quantitative whole-brain LC-MS/MS measures, report the one holding > molar_fraction of the
+  # candidates' summed abundance (resolved_by = molar_fraction). Otherwise leave it as ranked.
+  brain_evidence:
+    enabled: true
+    reference_dir: lamanno2026        # under reference/
+    resolve_ambiguous: true
+    molar_fraction: 0.8
+    maldi_match_ppm: 5                # their MALDI peaks (positive mode) count only within this
+    maldi_min_score: 4                # and only if they scored the name above this
 
 normalization:
   methods: [tic, rms, median]
   for_stats: "tic"                   # decided up front; statistics only ever use this layer
-  umaia: {enabled: false, num_steps: 2000}   # needs the optional uMAIA env
+  # Keep off. It needs its own environment, and as written it passes no covariate, so it would
+  # align every section's intensity distributions and remove the genotype difference along
+  # with the batch effects (each section is one animal here).
+  umaia: {enabled: false, num_steps: 2000}
   embedding_batch_correction: "none" # none | harmony. Only for plots, never for statistics
 
 registration:
@@ -136,8 +184,7 @@ registration:
   ap_step_mm: 0.10
   try_rotations_deg: [0, 90, 180, 270]   # starting angles; slides were imaged rotated
   # No optical scans of slides E-K were in the share (they sit inside the SCiLS projects).
-  # Don't use 09SEP26/Pilar_cerebellum_slide_Z001.tif: that's a different slide (cerebellum).
-  # If Pilar exports them, put the paths here (relative to data_root) and the um per pixel.
+  # If optical scans are exported, put the paths here (relative to data_root) and the um per pixel.
   optical_tiffs: {E: null, F: null, G: null, I: null, J: null, K: null}
   tiff_um_per_px: null
   # Guide image per mode (used by the mode(s) that register themselves): auto = strongest
@@ -160,7 +207,9 @@ registration:
 
 explore:
   mode: null                         # null means every mode in modes.run
-  morans_i: {k_neighbors: 6, n_perm: 199, min_I: 0.3, min_section_fraction: 0.5}   # smallest possible p = 1/(n_perm+1)
+  # min_I 0.4 as in the Lipid Brain Atlas feature QC (was 0.3); a peak counts as spatially
+  # structured if I >= min_I in at least min_section_fraction of the sections (6 of 12).
+  morans_i: {k_neighbors: 6, n_perm: 199, min_I: 0.4, min_section_fraction: 0.5}   # smallest possible p = 1/(n_perm+1)
   nmf: {k: "auto", k_grid: [4, 6, 8, 10, 12], pixel_subsample: 50000, max_iter: 400}
   territories: {resolution: 0.5, k_neighbors: 15, pixel_subsample: 30000}   # Leiden; KMeans if leidenalg is missing
   # Divide each lipid by its per-slide median before NMF/territories, so the clustering follows
@@ -180,14 +229,46 @@ differential:
   run_mixedlm: false
   fdr_alpha: 0.05
   run_territories: true
-  # Which peaks enter the untargeted family (decided before looking at results):
-  #   annotated_or_structured = annotated (not isotopes) or spatially structured in 08 (Moran)
-  #   all                     = every non-isotope peak (~1500 of them, mostly noise, so the FDR
-  #                             correction gets very strict)
-  untargeted_peaks: annotated_or_structured
+  # Which peaks enter the untargeted family (q_all):
+  #   lamanno                 = the Lipid Brain Atlas feature QC: annotated (any database) AND
+  #                             spatially structured in 08 (Moran's I) AND brighter on tissue than
+  #                             on bare glass (off/on ratio < feature_qc.max_off_on_ratio) AND one
+  #                             adduct per lipid (feature_qc). Peaks failing it are still tested
+  #                             and reported, but get no q_all. Hypothesis-class peaks always keep
+  #                             their own family (q_targeted), whatever the QC says.
+  #   annotated_or_structured = annotated (not isotopes) or spatially structured (the old default)
+  #   all                     = every non-isotope peak (strict FDR: mostly noise)
+  untargeted_peaks: lamanno
+  feature_qc:
+    max_off_on_ratio: 1.0             # their rule: more signal on tissue than on the matrix
+    # One adduct per lipid: when several ions carry the same name (e.g. [M+H]+, [M+Na]+, [M+K]+)
+    # and their pixel intensities correlate (Pearson r of log intensities >= min_adduct_r), keep
+    # the one with the fewest zero pixels, then the most signal. Ions that don't correlate are
+    # all kept and flagged: one of them is probably a different compound.
+    min_adduct_r: 0.5
+    max_pixels_for_r: 50000
+  # |log2FC| at or above this is flagged large_effect (a flag next to q, not a filter). The
+  # Lipid Brain Atlas used 0.2 for its log fold changes; 0.2 in log2 is about 15%.
+  large_effect_log2fc: 0.2
   # The lipid-only white/grey split (07 fallback) is unstable; use it only if no atlas
   # regions exist for this mode. "always" tests it anyway.
   lipid_wm_gm: fallback_only
+  # Which test decides significance for single peaks: "moderated" (empirical-Bayes moderated
+  # paired t, limma's approach: shares variance information across peaks, far more stable with
+  # 5 degrees of freedom per peak) or "ttest" (the plain paired t). Both are always reported.
+  single_peak_test: moderated
+  # Also test every result after subtracting each slide's technical log2 ratio predicted from
+  # the off-tissue position gradient (columns *_gradient_corrected). A sensitivity check.
+  gradient_corrected: true
+  # Class tests repeated with these normalizations (from the size factors 06 stores), as a check
+  # that conclusions don't hinge on TIC. Statistics stay on normalization.for_stats.
+  normalization_sensitivity: [median]
+  # A section's atlas region share far from the other sections (outside these multiples of the
+  # median) is reported as a possible registration problem.
+  region_fraction_flag: [0.6, 1.67]
+  # Sections to leave out of the atlas-region tests (whole section and territories keep them),
+  # as "slide:Top" or "slide:Bottom". Only for a registration that is clearly off in the overlays.
+  exclude_sections_from_regions: []
   # stats use log2 of the per-animal means; a pseudocount (half the smallest positive mean) is
   # added only for lipids where some animal's mean is exactly 0
 
@@ -215,6 +296,7 @@ class_tests:
       "HexCer": {classes: [HexCer]}
       "Cer": {classes: [Cer]}
       "SM": {classes: [SM]}
+      "LSM": {classes: [LSM]}             # lyso-sphingomyelin: reported to accumulate in this model
       "GM1": {classes: [GM1]}
       "GM2": {classes: [GM2]}
       "GM3": {classes: [GM3]}
@@ -230,8 +312,9 @@ class_tests:
       "LPI": {classes: [LPI]}
     lip_pos:
       "HexCer": {classes: [HexCer]}
-      "Hex2Cer": {classes: [Hex2Cer]}
+      "Hex2Cer": {classes: [Hex2Cer]}    # dihexosylceramide; in brain mostly LacCer
       "SM": {classes: [SM]}
+      "LSM": {classes: [LSM]}
       "PC": {classes: [PC]}
       "PE": {classes: [PE]}
       "Cholesterol": {classes: [Cholesterol]}
@@ -250,6 +333,7 @@ class_tests:
       "GABA": {names: [GABA]}
       "LPE": {classes: [LPE]}
       "LPI": {classes: [LPI]}
+      "LSM": {classes: [LSM]}
   ratios:                            # [numerator, denominator], names from the classes above
     lip_neg:
       - ["Sulfatide", "HexCer"]
@@ -257,6 +341,7 @@ class_tests:
       - ["Sulfatide", "PE+PI+PS"]
       - ["HexCer", "Cer"]
       - ["SM", "Cer"]
+      - ["LSM", "SM"]
       - ["GM2+GM3", "GM1"]
       - ["GM3", "GM1"]
       - ["BMP/PG", "PE+PI+PS"]
@@ -267,16 +352,68 @@ class_tests:
       - ["HexCer", "PC"]
       - ["HexCer", "SM"]
       - ["LPC", "PC"]
+      - ["LSM", "SM"]
+      - ["Hex2Cer", "HexCer"]
     met_neg:
       - ["GPE", "LPE"]
       - ["GPI", "LPI"]
       - ["GPE", "Phosphoethanolamine"]
       - ["GPD sum", "N-acetylaspartate"]
+  # Precursor -> product ratios for sphingolipid steps that keep the ceramide backbone (same
+  # chains), one ratio per backbone we detect, e.g. HexCer 42:2;O2 / Cer 42:2;O2. In a KO vs
+  # Control comparison of log ratios the lipids' different ionization efficiencies cancel, so
+  # these index one enzyme step each. Lyso/diacyl phospholipid steps are left out on purpose:
+  # one sum composition maps to many lyso species, and MALDI in-source fragments of PC look
+  # like LPC. Exploratory; their own BH family per mode (reaction_tests.csv).
+  reactions:
+    regions: [whole_section, white_matter]
+    steps:
+      - {product: HexCer, precursor: Cer, enzyme: "Ugt8 (GalCer synthase) / Ugcg"}
+      - {product: SHexCer, precursor: HexCer, enzyme: "Gal3st1 (cerebroside sulfotransferase)"}
+      - {product: Hex2Cer, precursor: HexCer, enzyme: "B4galt5/6 (LacCer synthase)"}
+      - {product: SM, precursor: Cer, enzyme: "Sgms1/2 (SM synthase)"}
+  # Primary endpoints: a short list named in advance from the hypotheses (myelin lipids in white
+  # matter; storage lipids and BMP across the section; glycerophosphodiesters from the CLN3
+  # literature). They get their own BH family (q_primary), the one with real power at n = 6.
+  # Format "region | class or ratio name". Everything else stays exploratory.
+  primary:
+    lip_neg:
+      - "white_matter | Sulfatide / PE+PI+PS"
+      - "white_matter | HexCer"
+      - "whole_section | Cer"
+      - "whole_section | GM all"
+      - "whole_section | BMP/PG"
+    lip_pos: []
+    met_neg:
+      - "whole_section | GPI"
+      - "whole_section | GPG"
+      - "whole_section | GPE"
   # features shown in the per-slide dot plot (class or ratio names, per mode)
   plot_features:
     lip_neg: ["Sulfatide", "Sulfatide / PE+PI+PS", "HexCer", "Cer", "GM all", "BMP/PG"]
     lip_pos: ["HexCer", "HexCer / PC", "SM", "LPC / PC"]
     met_neg: ["GPI", "GPG", "GPE", "GPI / LPI"]
+
+# Lipizones (phase 09b): pixels grouped by their whole lipid profile, as in the Lipid Brain
+# Atlas, without genotype labels; then per-animal tests inside each lipizone (never per pixel).
+# Levels nest: each of the finest lipizones sits inside one lipizone of every coarser level.
+lipizones:
+  enabled: true
+  modes: [lip_neg, lip_pos]          # modes to cluster (each on its own peaks)
+  features: feature_qc               # feature_qc (09 qc_pass) | structured (08 Moran) | all
+  per_slide_scaling: true            # each peak divided by its per-slide median (keeps the within-slide KO/Ctl difference)
+  n_pcs: 30
+  # control: learn the lipizones on Control sections only and assign KO pixels to the nearest
+  # one (reference mapping, as for the 08 territories). With "all", a strong genotype effect
+  # splits lipizones into KO-only and Control-only ones, and the area tests become circular.
+  train_on: control
+  train_pixels_per_section: 5000     # the same number from every section, so every animal counts equally
+  levels: [4, 12, 40]                # coarse to fine
+  test_levels: [4, 12]               # lipid and class tests run inside these levels (area tests: all levels)
+  marker_top_n: 5
+  slide_specific_share: 0.5          # flag a lipizone with more than this share of its pixels on one slide
+  umap: true                         # needs umap-learn (optional); otherwise the embedding is PCA
+  embedding_pixels: 20000
 
 # Do the slides agree? (end of 09) Each slide's log2(Mutant/Control) over all tested peaks is
 # its "difference profile". With correct labels the slides share the genotype effect, so the
@@ -298,6 +435,22 @@ hypotheses:                          # direction expected in CLN3 KO vs Control
   depleted: [SM, SHexCer]            # specific myelin species; SM and SHexCer appear in both lists on purpose
   secondary: [BMP_PG, GPD, ST]
 
+# MS/MS check of the raw .d folders (scripts/tools/inspect_bruker_d.py, "msms" in run_phase.sh).
+# Lists what each folder holds and whether any MS/MS isolation window (PRM, DIA, MS/MS) covers
+# our annotated lipids; with Bruker's library it also reads the fragment spectra and looks for
+# each class's diagnostic fragments (reference/msms_diagnostic_fragments.csv).
+msms_check:
+  modes: [lip_neg, lip_pos]
+  target_classes: [SHexCer, HexCer, Hex2Cer, Cer, SM, LSM, GM1, GM2, GM3, BMP/PG, PE, PI, PS, PC, LPC, LPE]
+  extra_targets: []                  # e.g. [{name: "ST 42:2;O2 [M-H]-", mz: 888.6230, polarity: negative, lipid_class: SHexCer}]
+  isolation_tolerance_da: 0.05       # added to half the isolation width
+  spectra: true
+  sdk_library: auto                  # auto = libtimsdata from `pip install opentims_bruker_bridge`, or a path
+  max_frames_per_window: 400         # strongest spectra summed per isolation window
+  sum_bin_ppm: 10
+  fragment_ppm: 20                   # 20 ppm keeps PI's m/z 241.011 apart from the sulfatide ion at 241.002
+  min_fragment_rel_intensity: 0.01   # of the base peak
+
 # Comparison with the SCiLS exports in the data folder. Off for the preliminary analysis.
 scils_crosscheck:
   enabled: false
@@ -311,8 +464,14 @@ scils_crosscheck:
 downloads:                           # only used by 00_setup.py --download
   lipidmaps_url: "https://www.lipidmaps.org/files/?file=LMSD&ext=sdf.zip"
   hmdb_url: "https://hmdb.ca/system/downloads/current/structures.zip"
+  swisslipids_url: "https://www.swisslipids.org/api/file.php?cas=download_files&file=lipids.tsv"
   timeout_s: 600
 
 report:
   top_n_hits: 12
   cmap: "viridis"
+  # Every figure is saved as PNG at figure_dpi and, for each extra format listed, as a vector
+  # file (PDF text stays editable). Its caption goes to <figure>.caption.txt, the phase summary
+  # and the HTML report.
+  figure_dpi: 300
+  figure_formats: [png, pdf]
