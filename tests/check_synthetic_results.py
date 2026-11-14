@@ -87,6 +87,66 @@ def main():
         check(f"09 class test {mode} {feat} {'up' if sign > 0 else 'down'} in {unit}",
               r["log2fc"] * sign > 0.2 and r["q_bh"] < 0.05, f"log2FC {r['log2fc']:+.2f}, q {r['q_bh']:.1e}")
 
+    # primary endpoints, moderated test, matrix filter
+    ct = pd.read_csv(R / "09_differential" / "lip_neg" / "class_tests.csv")
+    pr = ct[ct["primary"].astype(bool)] if "primary" in ct else ct.iloc[0:0]
+    check("09 primary endpoints have their own q (planted sulfatide/HexCer endpoints q < 0.05)",
+          len(pr) >= 2 and (pr["q_primary"] < 0.05).sum() >= 2, f"{len(pr)} primary, {int((pr['q_primary'] < 0.05).sum()) if len(pr) else 0} with q < 0.05")
+    d = pd.read_csv(R / "09_differential" / "lip_neg" / "differential.csv")
+    check("09 single peaks decided by the moderated t", "p_moderated" in d and (d["primary_test"] == "moderated t").all())
+    pk = pd.read_csv(ctx.output_root / "processed" / "lip_neg" / "peaks_all_candidates.csv")
+    check("04 matrix filter ran (off/on-tissue ratio per peak)", "off_on_ratio" in pk and pk["off_on_ratio"].notna().any(),
+          f"{int(pk['matrix_like'].sum()) if 'matrix_like' in pk else 0} removed (filter off by default)")
+
+    # brain evidence, feature QC, effect flag, reaction ratios
+    ann = pd.read_csv(ctx.output_root / "processed" / "lip_neg" / "annotations.csv")
+    r = ann[ann["annotation"] == "HexCer 42:2;O2"]
+    check("05 brain evidence: HexCer 42:2;O2 is high tier (LC-MS/MS in mouse brain)",
+          "confidence_tier" in ann and len(r) and (r["confidence_tier"] == "high").any(),
+          ", ".join(sorted(set(ann.get("confidence_tier", pd.Series(dtype=str)).fillna("").astype(str)) - {""})))
+    from cln3msi import evidence
+    from cln3msi.annotate import REF
+    tier = evidence.load(REF / "lamanno2026").score("GM1 36:1;O2")["confidence_tier"]
+    check("05 gangliosides are 'not covered' by the reference", tier == "not covered", tier)
+    fq = R / "09_differential" / "lip_neg" / "feature_qc.csv"
+    ok = fq.exists()
+    if ok:
+        F = pd.read_csv(fq)
+        ok = F["qc_pass"].sum() > 0 and F["qc_pass"].sum() < F["monoisotopic"].sum()
+    check("09 feature QC written, some peaks pass and some don't", ok,
+          f"{int(F['qc_pass'].sum())} of {int(F['monoisotopic'].sum())} pass" if fq.exists() else "missing")
+    d = pd.read_csv(R / "09_differential" / "lip_neg" / "differential.csv")
+    check("09 q_all only inside the untargeted family, large_effect flagged",
+          "large_effect" in d and d.loc[~d["in_untargeted_family"].astype(bool), "q_all"].isna().all())
+    rt = R / "09_differential" / "lip_neg" / "reaction_tests.csv"
+    ok = rt.exists()
+    if ok:
+        T = pd.read_csv(rt).set_index(["unit", "feature"])
+        # planted: Cer up everywhere, HexCer up in white matter, sulfatide down in white matter
+        k = ("white_matter", "SHexCer/HexCer 42:2;O2")
+        ok = k in T.index and T.loc[k, "log2fc"] < -0.2
+    check("09 reaction ratio SHexCer/HexCer 42:2;O2 down in white matter (planted)", ok,
+          f"log2FC {T.loc[k, 'log2fc']:+.2f}" if ok else "missing")
+
+    # 09b lipizones: learned on Control, no batch-only lipizones, white-matter lipizone carries the planted effects
+    lz = R / "09b_lipizones" / "lip_neg"
+    ok = (ctx.output_root / "processed" / "lip_neg" / "lipizones.parquet").exists() and (lz / "lipizones.csv").exists()
+    if ok:
+        info = pd.read_csv(lz / "lipizones.csv")
+        ok = not info["slide_specific"].astype(bool).any()
+    check("09b lipizones written, none specific to one slide", ok,
+          f"{len(info)} finest lipizones" if ok else "missing or slide-specific")
+    ok, det = False, "missing"
+    if (lz / "class_tests.csv").exists():
+        CT = pd.read_csv(lz / "class_tests.csv")
+        wm = CT[(CT["level"] == "k4") & CT["best_region"].fillna("").str.startswith("white_matter")]
+        h = wm[wm.feature == "HexCer"]
+        r = wm[wm.feature == "Sulfatide / HexCer"]
+        ok = len(h) and len(r) and h["log2fc"].iloc[0] > 0.2 and r["log2fc"].iloc[0] < -0.2
+        det = (f"HexCer {h['log2fc'].iloc[0]:+.2f}, sulfatide/HexCer {r['log2fc'].iloc[0]:+.2f}"
+               if len(h) and len(r) else "no white-matter lipizone at k4")
+    check("09b white-matter lipizone: HexCer up, sulfatide/HexCer down (planted)", ok, det)
+
     # provenance: every phase recorded, all with the same code and config
     from cln3msi import provenance
     recs = [r for r in provenance.read_all(ctx) if r.get("phase") != "10_report"]
