@@ -1,0 +1,34 @@
+lipid_class,polarity,kind,formula,ion_charge,description,specificity
+SHexCer,negative,fragment,HSO4,-1,hydrogen sulfate anion (m/z 96.96),high
+SHexCer,negative,fragment,C6H9O8S,-1,sulfated hexose minus water (m/z 241.00),high
+SHexCer,negative,fragment,C6H11O9S,-1,sulfated hexose (m/z 259.01),high
+HexCer,negative,neutral_loss,C6H10O5,0,loss of a hexose (162.05) giving the ceramide ion,high
+HexCer,positive,neutral_loss,C6H10O5,0,loss of a hexose (162.05),high
+HexCer,positive,fragment,C18H34N,1,d18:1 sphingoid base minus 2 H2O (m/z 264.27),medium
+Hex2Cer,negative,neutral_loss,C12H20O10,0,loss of two hexoses (324.11),high
+Hex2Cer,positive,fragment,C18H34N,1,d18:1 sphingoid base minus 2 H2O (m/z 264.27),medium
+Cer,positive,fragment,C18H34N,1,d18:1 sphingoid base minus 2 H2O (m/z 264.27),high
+Cer,negative,neutral_loss,H2O,0,loss of water,low
+SM,positive,fragment,C5H15NO4P,1,phosphocholine (m/z 184.07),high
+SM,positive,neutral_loss,C3H9N,0,loss of trimethylamine (59.07) from [M+Na]+ or [M+K]+,medium
+SM,negative,fragment,C4H11NO4P,-1,phosphocholine minus methyl (m/z 168.04),medium
+LSM,positive,fragment,C5H15NO4P,1,phosphocholine (m/z 184.07),high
+PC,positive,fragment,C5H15NO4P,1,phosphocholine (m/z 184.07),high
+PC,positive,neutral_loss,C3H9N,0,loss of trimethylamine (59.07) from [M+Na]+ or [M+K]+,medium
+LPC,positive,fragment,C5H15NO4P,1,phosphocholine (m/z 184.07),high
+GM1,negative,fragment,C11H16NO8,-1,N-acetylneuraminic acid (m/z 290.09),high
+GM2,negative,fragment,C11H16NO8,-1,N-acetylneuraminic acid (m/z 290.09),high
+GM3,negative,fragment,C11H16NO8,-1,N-acetylneuraminic acid (m/z 290.09),high
+PE,negative,fragment,C2H7NO4P,-1,phosphoethanolamine (m/z 140.01),high
+PE,negative,fragment,C5H11NO5P,-1,glycerophosphoethanolamine minus water (m/z 196.04),medium
+LPE,negative,fragment,C2H7NO4P,-1,phosphoethanolamine (m/z 140.01),high
+PI,negative,fragment,C6H10O8P,-1,inositol phosphate minus water (m/z 241.01; 39 ppm from the sulfatide ion),high
+PI,negative,fragment,C6H12O9P,-1,inositol phosphate (m/z 259.02),medium
+PS,negative,neutral_loss,C3H5NO2,0,loss of serine (87.03),high
+BMP/PG,negative,fragment,C3H6O5P,-1,glycerophosphate minus water (m/z 152.99; BMP and PG both give it),low
+BMP/PG,negative,fragment,C3H8O6P,-1,glycerophosphate (m/z 171.01),medium
+*,negative,fragment,C16H31O2,-1,fatty acyl 16:0 anion (m/z 255.23),chain
+*,negative,fragment,C18H35O2,-1,fatty acyl 18:0 anion (m/z 283.26),chain
+*,negative,fragment,C18H33O2,-1,fatty acyl 18:1 anion (m/z 281.25),chain
+*,negative,fragment,C20H31O2,-1,fatty acyl 20:4 anion (m/z 303.23),chain
+*,negative,fragment,C22H31O2,-1,fatty acyl 22:6 anion (m/z 327.23),chain
