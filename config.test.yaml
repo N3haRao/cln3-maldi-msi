@@ -3,7 +3,7 @@
 inherit: config.yaml
 
 paths:
-  data_root: "synthetic_data/Brain - Pilar - Spatial (synthetic)"
+  data_root: "synthetic_data/MSI data (synthetic)"
   output_root: "synthetic_data/outputs"
   cache_root: "synthetic_data/cache"
 
