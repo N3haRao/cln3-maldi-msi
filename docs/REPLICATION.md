@@ -2,8 +2,8 @@
 
 Step-by-step instructions to rerun the whole analysis from the raw imzML files, either on a
 Mac or Linux machine or on a SLURM cluster, and to check that a rerun matches. For what each
-step does and why, see [`METHODS.md`](METHODS.md). For the Ada cluster specifically, with
-every command including the ssh login, see [`ADA_RUN_GUIDE.md`](ADA_RUN_GUIDE.md).
+step does and why, see [`METHODS.md`](METHODS.md). For a SLURM cluster, with every command
+including the ssh login, see [`HPC_RUN_GUIDE.md`](HPC_RUN_GUIDE.md).
 
 Contents
 
@@ -24,7 +24,7 @@ Contents
 
 | | |
 |---|---|
-| Data | the folder `imzML files for biostats/` from Ada (36 files: 6 slides × 3 modes, one `.imzML` and one `.ibd` each, about 40 GB). It is **not** in this repository: it is unpublished collaborator data. |
+| Data | the folder `imzML files for biostats/` (36 files: 6 slides × 3 modes, one `.imzML` and one `.ibd` each, about 40 GB). It is **not** in this repository: it is unpublished collaborator data. |
 | Sample sheet | `metadata/sample_sheet.csv` (in the repository) |
 | Software | [Miniforge](https://github.com/conda-forge/miniforge) (conda/mamba). Everything else is installed from `environment.yml` / `requirements.txt`. |
 | Internet | once, for phase 00 to download LIPID MAPS, HMDB and the Allen atlas. After that the pipeline runs offline. |
@@ -49,12 +49,12 @@ inside it.
 With git:
 
 ```bash
-git clone https://github.com/N3haRao/cln3-maldi-msi.git
+git clone <URL of this repository> cln3-maldi-msi
 cd cln3-maldi-msi
-git checkout <branch or commit to reproduce>
+git checkout <branch or commit to reproduce>      # optional: main is the current version
 ```
 
-Or without git: on the GitHub page pick the branch, then Code > Download ZIP, and unzip. Both
+Or without git: on the repository's GitHub page, Code > Download ZIP, and unzip. Both
 ways work. Every run records a **code fingerprint** (a hash of the code itself, Section 8), so
 a ZIP copy can be matched to a run just as well as a git commit.
 
@@ -87,9 +87,9 @@ layout as the real data, 6 slides × 3 modes, about 600 MB), runs every phase on
 It takes about 5 to 10 minutes and needs no internet. The last lines should read:
 
 ```
-31 passed
+58 passed
 ...
-27/27 checks passed
+37/37 checks passed
 ```
 
 The checks cover recovery of the per-slide mass offsets and the planted position gradient,
@@ -105,7 +105,7 @@ Open `config.yaml` and set the `paths` block:
 
 ```yaml
 paths:
-  data_root: "/path/to/BRAIN - PILAR - SPATIAL"   # the folder that contains "imzML files for biostats"
+  data_root: "/path/to/data_root"                # the folder that contains "imzML files for biostats"
   output_root: "/path/to/outputs"                 # anywhere outside data_root
 ```
 
@@ -114,9 +114,9 @@ decisions described in `METHODS.md`. For a cluster, `config.hpc.yaml` inherits `
 and only overrides the paths, using `${CLN3_DATA}` for the data and `${CLN3_WORK}` for the
 outputs (set from `HPC_DATA` and `HPC_WORK` in `bin/hpc/settings.sh`).
 
-On Ada, the data are at `/home/nehar/cln3_msi/data/imzML files for biostats/`. Another user
-can run the pipeline against that folder from their own account (read access needed, outputs
-in their own home); see "Running as another user" in [`ADA_RUN_GUIDE.md`](ADA_RUN_GUIDE.md).
+On a cluster, another user can run the pipeline against an existing copy of the data from
+their own account (read access needed, outputs in their own home); see "Running as another
+user" in [`HPC_RUN_GUIDE.md`](HPC_RUN_GUIDE.md).
 
 ## 6. Run the pipeline
 
@@ -125,7 +125,7 @@ in their own home); see "Running as another user" in [`ADA_RUN_GUIDE.md`](ADA_RU
 ```bash
 conda activate cln3-msi
 python scripts/00_setup.py --config config.yaml --download   # once: validate, download and cache references
-bash bin/run_all.sh config.yaml                              # phases 01 to 10 in order, stops at the first error
+bash bin/run_all.sh config.yaml                              # phases 01 to 10 (incl. 04b, 09b) in order, stops at the first error
 ```
 
 `FROM=05 bash bin/run_all.sh config.yaml` restarts from a phase. Single phases:
@@ -147,8 +147,8 @@ bash bin/hpc/fetch_results.sh      # copy summaries, figures and the report back
 ```
 
 Jobs are chained with SLURM dependencies: 01 then 02, then for each mode 03 → 04 → 05 → 06 →
-07 → 08 → 09 (the lipid negative chain first, because the other modes reuse its registration),
-then 10. `FROM=09 bash bin/hpc/start_on_hpc.sh` resubmits from a phase.
+07 → 08 → 09 → 09b (the lipid negative chain first, because the other modes reuse its
+registration), then 10. `FROM=09 bash bin/hpc/start_on_hpc.sh` resubmits from a phase.
 
 ### Phases
 
@@ -163,7 +163,9 @@ then 10. `FROM=09 bash bin/hpc/start_on_hpc.sh` resubmits from a phase.
 | 06_normalize | TIC/RMS/median, slide-effect comparison | 04, 05 | `processed/<mode>/matrix_norm.h5ad` |
 | 07_register | Allen atlas registration, region masks | 06 | `processed/<mode>/regions.parquet` |
 | 08_explore | Moran's I, NMF programs, territories | 06, 07 | `processed/<mode>/territories.parquet` |
-| 09_differential | per-animal paired tests, class tests, slide check | 06, 07, 08 | `results/09_differential/<mode>/` |
+| 09_differential | per-animal paired tests, class tests, slide check, feature QC, reaction ratios | 05 to 08 | `results/09_differential/<mode>/` |
+| 09b_lipizones | unsupervised lipizones (learned on Controls) and per-animal tests inside them | 06, 07, 09 | `results/09b_lipizones/<mode>/` |
+| 11_compare_runs | compares two output folders, e.g. main vs slide J swapped (run on request) | two runs' 09 outputs | `results/11_compare/<mode>/` |
 | 10_report | one self-contained HTML report | everything | `report/report.html` |
 
 ## 7. Check the outputs
@@ -214,6 +216,7 @@ download of LIPID MAPS or HMDB at a later date may differ slightly.
 | `registration.*` (including the list of atlas regions) | 07 |
 | `explore.*` (Moran's I, NMF, territories) | 08 |
 | `differential.*`, `class_tests.*`, `pair_check.*` | 09 |
+| `lipizones.*` | 09b |
 | `report.*` | 10 |
 
 Example, if the sectioning records confirm that slide J's sections are swapped:
@@ -249,6 +252,9 @@ descendants are included), for example `striatum: ["STR"]`, and rerun from 07.
 | `could_be_position` | smaller than 2 × the position gradient, same sign (warning) |
 | `log2fc_Female`, `log2fc_Male`, `p_sex_difference_exploratory` | effect per sex and the exploratory sex × genotype test |
 | `ambiguous`, `typeII_flag`, `candidates` | annotation caveats |
+| `confidence_tier`, `evidence_score` | Lipid Brain Atlas evidence for the name (phase 05) |
+| `in_untargeted_family` | passes the feature QC, so it is in the `q_all` family |
+| `large_effect` | abs(log2FC) at or above `differential.large_effect_log2fc` (0.2) |
 
 ### `results/09_differential/<mode>/class_tests.csv` (one row per class or ratio and region)
 
@@ -258,6 +264,21 @@ difference). If a slide was flagged by the consistency check, extra columns
 `without_<slide>_*` and `flipped_<slide>_*` give the exploratory sensitivity analysis.
 `class_members.csv` lists the species in each class, and `class_values_per_animal.csv` the
 per-animal values that were tested.
+
+`n_species_high_evidence` counts members with Lipid Brain Atlas evidence above 4, and
+`log2fc_featureqc`, `p_featureqc`, `n_species_featureqc` repeat the test with feature-QC
+species only (a sensitivity check).
+
+### `results/09_differential/<mode>/reaction_tests.csv`
+
+Product / precursor ratio per ceramide backbone (`feature` such as `HexCer/Cer 42:2;O2`,
+with `product`, `precursor`, `enzyme`), the same test columns, and `q_bh` over this table.
+
+### `results/09_differential/<mode>/feature_qc.csv`
+
+One row per peak: `monoisotopic`, `annotated`, `spatially_structured`, `off_on_ratio`,
+`tissue_over_matrix`, `adduct_status` (single, chosen, redundant, kept not correlated),
+`adduct_r` and `qc_pass`.
 
 ### `results/09_differential/<mode>/pair_consistency.csv`
 
