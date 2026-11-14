@@ -207,6 +207,10 @@ def check_data_layout(ctx: Context) -> None:
         f"      {ctx.mode_def(m)['folder']}/   slide_<letter>_{m}.imzML + .ibd" for m in ctx.modes_to_run
     )
     layout = EXPECTED_LAYOUT.format(imzml_subdir=ctx.cfg["paths"]["imzml_subdir"], mode_lines=lines)
+    if str(ctx.cfg["paths"]["data_root"]).strip() in ("/path/to/data_root", "path/to/data_root", ""):
+        raise ConfigError("paths.data_root in config.yaml is still the placeholder.\n"
+                          "Open config.yaml (e.g. `open -e config.yaml` on a Mac) and set data_root to the\n"
+                          f"folder that contains \"{ctx.cfg['paths']['imzml_subdir']}\".\n{layout}")
     if not ctx.data_root.is_dir():
         raise ConfigError(f"data_root does not exist or is not a folder:\n  {ctx.data_root}\n{layout}\n"
                           "Fix paths.data_root in your config.")
