@@ -1,7 +1,7 @@
 """Short per-phase summaries (markdown) and helpers for figures.
 
 Every phase ends with summary.write(), which puts a markdown file in
-<output_root>/summaries/<phase>_<mode>.md. Those are the files to check out.
+<output_root>/summaries/<phase>_<mode>.md. Read these first after each phase.
 They list key numbers, warnings, and the figures written.
 """
 from __future__ import annotations
@@ -13,6 +13,10 @@ import matplotlib
 matplotlib.use("Agg")   # no windows, works on a cluster node too
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
+
+from . import figstyle  # noqa: E402
+
+figstyle.apply()          # one publication style for every phase
 
 
 def decimate(x, y, n: int = 20000):
@@ -72,12 +76,26 @@ class Summary:
         if log is not None:
             log.warning(text)
 
-    def fig(self, fig, *parts: str, dpi: int = 130) -> str:
+    def fig(self, fig, *parts: str, caption: str = "", dpi: int | None = None) -> str:
+        """Save a figure as PNG (report.figure_dpi, default 300) and, if report.figure_formats
+        lists it, as vector PDF; write its caption to <name>.caption.txt next to it."""
         p = self.ctx.out("figures", self.phase, *([self.mode] if self.mode else []), *parts)
-        fig.savefig(p, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+        dpi = int(dpi or self.ctx.get("report.figure_dpi", 300))
+        figstyle.finalize(fig)
+        fig.savefig(p, dpi=dpi)
+        for fmt in self.ctx.get("report.figure_formats", ["png", "pdf"]) or []:
+            if fmt.lower() != p.suffix[1:].lower():
+                fig.savefig(p.with_suffix("." + fmt.lower()), dpi=dpi)
         rel = str(p.relative_to(self.ctx.output_root))
-        self.figures.append(rel)
+        cap = " ".join(str(caption).split())
+        # the scale bar's length is chosen per figure: name the real one, or drop the phrase
+        bars = [getattr(a, "_cln3_scalebar", None) for a in fig.axes]
+        bars = [b for b in bars if b]
+        cap = cap.replace("Scale bar, 1 mm.", f"Scale bar, {bars[0]}." if bars else "").strip()
+        plt.close(fig)
+        if cap:
+            p.with_suffix(".caption.txt").write_text(cap + "\n")
+        self.figures.append((rel, cap))
         return rel
 
     def write(self) -> str:
@@ -85,7 +103,9 @@ class Summary:
         if self.warnings:
             body += ["", "## Warnings", ""] + [f"- {w}" for w in self.warnings]
         if self.figures:
-            body += ["", "## Figures", ""] + [f"- `{f}`" for f in self.figures]
+            body += ["", "## Figures", ""]
+            for i, (f, cap) in enumerate(self.figures, 1):
+                body.append(f"- **Figure {i}.** `{f}`" + (f"  \n  {cap}" if cap else ""))
         name = f"{self.phase}{'_' + self.mode if self.mode else ''}.md"
         p = self.ctx.out("summaries", name)
         p.write_text("\n".join(body) + "\n")
