@@ -10,7 +10,7 @@ mkdir -p "$HOME/.ssh" 2>/dev/null || true
 SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$HOME/.ssh/cm-%r@%h:%p" -o ControlPersist=30m)
 
 if [[ -z "$HPC_WORK" ]]; then
-  # default: ~/cln3_msi on Ada (ask Ada where home is)
+  # default: ~/cln3_msi on the cluster (ask the cluster where home is)
   echo "Connecting to $REMOTE (password prompt, if any, comes now)"
   HPC_WORK="$(ssh "${SSH_OPTS[@]}" "$REMOTE" 'echo $HOME')/cln3_msi"
 fi
@@ -19,4 +19,8 @@ if [[ "$HPC_WORK" == *" "* ]]; then
   exit 2
 fi
 REMOTE_REPO="$HPC_WORK/repo"
-echo "Ada work folder: $HPC_WORK"
+# RUN=flipJ (or any tag) selects config.hpc.<RUN>.yaml and the output folder outputs_<RUN>,
+# so a sensitivity run never touches the main outputs. Empty = the main run.
+RUN="${RUN:-}"
+REMOTE_OUT="$HPC_WORK/outputs${RUN:+_$RUN}"
+echo "Cluster work folder: $HPC_WORK${RUN:+   (run: $RUN, outputs: $REMOTE_OUT)}"
