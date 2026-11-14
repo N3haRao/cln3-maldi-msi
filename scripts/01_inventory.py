@@ -26,7 +26,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, samples  # noqa: E402
+from cln3msi import cli, figstyle, samples  # noqa: E402
 from cln3msi.imzml_io import SlideReader, detect_profile, read_header, summarize_header  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
 
@@ -202,14 +202,17 @@ def main():
         # quick look at which pixels were acquired on each slide
         acq = [r for r in rows if "_acquired" in r]
         if acq:
-            fig, axes = plt.subplots(1, len(acq), figsize=(2.2 * len(acq), 3), squeeze=False)
+            fig, axes = plt.subplots(1, len(acq), figsize=(1.9 * len(acq), 2.4), squeeze=False)
             for ax, r in zip(axes[0], acq):
                 ax.imshow(r["_acquired"], cmap="Greys", interpolation="nearest")
-                ax.set_title(f"{r['slide']}  {r['n_spectra']} px", fontsize=8)
-                ax.set_xticks([])
-                ax.set_yticks([])
-            fig.suptitle(f"{mode}: acquired pixels (black)", fontsize=9)
-            S.fig(fig, "acquired_pixels.png")
+                ax.set_title(f"Slide {r['slide']}\n{r['n_spectra']:,} pixels", fontsize=8)
+                figstyle.image_axes(ax)
+                for sp in ax.spines.values():
+                    sp.set_visible(True); sp.set_linewidth(0.4); sp.set_color("0.6")  # noqa: E702
+            figstyle.title(fig, f"{figstyle.mode_name(mode)}: acquired raster per slide")
+            S.fig(fig, "acquired_pixels.png", caption=(
+                f"Pixels with a stored spectrum (black) in each slide's imzML file, {figstyle.mode_name(mode).lower()}. "
+                "The frame is the bounding box of the raster; the pixel count is given above each slide."))
 
         info = {"mode": mode, "spectrum_type": types[0] if len(types) == 1 else types,
                 "storage": df["storage_mode"].dropna().unique().tolist(),
@@ -232,3 +235,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
