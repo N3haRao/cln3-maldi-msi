@@ -193,6 +193,9 @@ def register_section(guide: np.ndarray, tissue: np.ndarray, atlas: Atlas, ap_ind
                      log=None) -> dict:
     """guide: 2D float image of ONE section (0 outside), tissue: its boolean mask."""
     import SimpleITK as sitk
+    # one thread: SimpleITK's multithreaded metric sums are not added in a fixed order, so the
+    # optimizer can end a little differently from run to run. Single-threaded = reproducible.
+    sitk.ProcessObject.SetGlobalDefaultNumberOfThreads(1)
 
     g = guide.astype(np.float32)
     fixed = sitk.GetImageFromArray(g)
