@@ -1,4 +1,4 @@
-# Config for the HPC (Ada). Inherits everything from config.yaml and only moves the folders.
+# Config for a SLURM cluster. Inherits everything from config.yaml and only moves the folders.
 # The job scripts in bin/hpc/ set both variables from bin/hpc/settings.sh:
 #   CLN3_WORK = HPC_WORK (default ~/cln3_msi), your own work folder
 #   CLN3_DATA = HPC_DATA (default HPC_WORK/data), the folder with "imzML files for biostats".
@@ -6,8 +6,10 @@
 #
 #   ${CLN3_DATA}/imzML files for biostats/...   <- uploaded from the Mac by upload_to_hpc.sh
 #   ${CLN3_WORK}/outputs/                       <- everything the pipeline writes
+#   ${CLN3_WORK}/raw_d/*.d                      <- raw Bruker folders for the MS/MS check (read only)
 inherit: config.yaml
 
 paths:
   data_root: "${CLN3_DATA}"
+  bruker_d_root: "${CLN3_WORK}/raw_d"     # upload_d_to_hpc.sh puts the .d folders here (optional MS/MS check)
   output_root: "${CLN3_WORK}/outputs"
