@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RUN ON THE MAC. Copies the code and the imzML data to Ada.
+# RUN ON THE MAC. Copies the code and the imzML data to the cluster.
 #   bash bin/hpc/upload_to_hpc.sh            # code + data
 #   bash bin/hpc/upload_to_hpc.sh --code     # code only (after a git pull / config change)
 #
@@ -7,9 +7,10 @@
 # skips files that are already there and identical. The data is ~40 GB; while it copies,
 # `caffeinate` keeps the Mac awake (keep it plugged in, lid open).
 #
-# Only "imzML files for biostats" is uploaded (36 files). 
+# Only "imzML files for biostats" is uploaded (36 files). Anything else in the data folder
+# (vendor project files, exports, other runs) stays on your computer: the analysis doesn't use it.
 #
-# Where things go on Ada (HPC_WORK, default ~/cln3_msi = /home/user/cln3_msi):
+# Where things go on the cluster (HPC_WORK, default ~/cln3_msi in your cluster home):
 #   ~/cln3_msi/repo/                           the code (mirrors this folder)
 #   ~/cln3_msi/data/imzML files for biostats/  the data
 set -euo pipefail
@@ -17,7 +18,11 @@ source "$(dirname "$0")/_common.sh"
 
 CODE_ONLY=0
 [[ "${1:-}" == "--code" ]] && CODE_ONLY=1
-SRC_DATA="$LOCAL_DATA_ROOT/imzML files for biostats"
+if [[ $CODE_ONLY -eq 0 && ( -z "${LOCAL_DATA_ROOT:-}" || "$LOCAL_DATA_ROOT" == "/path/to/data_root" ) ]]; then
+  echo "Set LOCAL_DATA_ROOT in bin/hpc/settings.sh (the folder that contains \"imzML files for biostats\")"
+  exit 2
+fi
+SRC_DATA="${LOCAL_DATA_ROOT:-}/imzML files for biostats"
 RSYNC_SSH="ssh ${SSH_OPTS[*]}"
 KEEP_AWAKE=()
 command -v caffeinate >/dev/null 2>&1 && KEEP_AWAKE=(caffeinate -i)
@@ -35,11 +40,11 @@ if [[ $CODE_ONLY -eq 0 ]]; then
 fi
 
 echo "Connecting to $REMOTE"
-ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p '$REMOTE_REPO' '$HPC_WORK/data' '$HPC_WORK/slurm_logs' && echo \"free space on Ada: \$(df -h '$HPC_WORK' | awk 'NR==2{print \$4}')\""
+ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p '$REMOTE_REPO' '$HPC_WORK/data' '$HPC_WORK/slurm_logs' && echo \"free space on the cluster: \$(df -h '$HPC_WORK' | awk 'NR==2{print \$4}')\""
 
 echo "== uploading code to $REMOTE:$REMOTE_REPO"
-# --delete makes Ada's copy identical to the Mac's (edit code/config on the Mac, not on Ada).
-# synthetic_data/ and outputs/ are excluded, so a test run on Ada is never deleted.
+# --delete makes the cluster's copy identical to yours (edit code/config locally, not on the cluster).
+# synthetic_data/ and outputs/ are excluded, so a test run on the cluster is never deleted.
 rsync -az --delete -e "$RSYNC_SSH" \
   --exclude ".git/" --exclude "synthetic_data/" --exclude "outputs/" --exclude "__pycache__/" \
   --exclude "*.egg-info/" --exclude ".ipynb_checkpoints/" --exclude ".DS_Store" \
@@ -52,12 +57,12 @@ if [[ $CODE_ONLY -eq 0 ]]; then
   ${KEEP_AWAKE[@]+"${KEEP_AWAKE[@]}"} rsync -a --partial --progress -e "$RSYNC_SSH" \
     "$SRC_DATA" "$REMOTE:$HPC_WORK/data/"
 
-  echo "== checking what arrived on Ada"
+  echo "== checking what arrived on the cluster"
   remote=$(ssh "${SSH_OPTS[@]}" "$REMOTE" "cd '$HPC_WORK/data/imzML files for biostats' && \
     echo \$(find . -type f \( -name '*.imzML' -o -name '*.ibd' \) | wc -l) \$(du -sk . | cut -f1)")
   r_n=${remote% *}
   r_kb=${remote#* }
-  echo "on Ada: $r_n files, $((r_kb / 1024 / 1024)) GB   |   on the Mac: $n files, $((local_kb / 1024 / 1024)) GB"
+  echo "on the cluster: $r_n files, $((r_kb / 1024 / 1024)) GB   |   on the Mac: $n files, $((local_kb / 1024 / 1024)) GB"
   if [[ "$r_n" -eq "$n" ]]; then
     echo "OK: all files arrived (sizes can differ by a few % between Mac and Linux disks, that's normal)"
   else
@@ -66,4 +71,4 @@ if [[ $CODE_ONLY -eq 0 ]]; then
   fi
 fi
 echo
-echo "Done. Next (see docs/ADA_RUN_GUIDE.md):  bash bin/hpc/start_on_hpc.sh"
+echo "Done. Next (see docs/HPC_RUN_GUIDE.md):  bash bin/hpc/start_on_hpc.sh"
