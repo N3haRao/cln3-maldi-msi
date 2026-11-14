@@ -22,7 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cln3msi import cli, provenance  # noqa: E402
+from cln3msi import cli, figstyle, provenance  # noqa: E402
 from cln3msi.images import section_image  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
 from cln3msi.util import read_h5ad  # noqa: E402
@@ -39,15 +39,33 @@ img{max-width:100%;border:1px solid #eee;margin:6px 0}
 .caveat{background:#fff6e5;border-left:4px solid #f0a020;padding:8px 12px;margin:8px 0}
 details{margin:6px 0}summary{cursor:pointer;font-weight:600}
 code{background:#f4f4f6;padding:1px 4px;border-radius:3px}
+figure{margin:14px 0 20px 0}figcaption{font-size:12.5px;color:#333;max-width:900px;line-height:1.45;margin-top:4px}
 .small{color:#666;font-size:12px}
 """
 
 
-def img_tag(path: Path, width: str = "100%") -> str:
+def img_tag(path: Path, width: str = "100%", max_px: int = 2000) -> str:
+    """The figure (downscaled to max_px wide for the HTML; the full-resolution PNG and PDF stay on
+    disk) with its caption underneath, if <name>.caption.txt exists."""
     if not path.exists():
         return f"<p class='small'>(missing figure {html.escape(str(path.name))})</p>"
-    b = base64.b64encode(path.read_bytes()).decode()
-    return f"<img src='data:image/png;base64,{b}' style='width:{width}'>"
+    data = path.read_bytes()
+    try:
+        import io
+
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        if im.width > max_px:
+            im = im.resize((max_px, round(im.height * max_px / im.width)), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, format="PNG", optimize=True)
+            data = buf.getvalue()
+    except Exception:
+        pass
+    b = base64.b64encode(data).decode()
+    cap = path.with_suffix(".caption.txt")
+    capt = f"<figcaption>{html.escape(cap.read_text().strip())}</figcaption>" if cap.exists() else ""
+    return f"<figure><img src='data:image/png;base64,{b}' style='width:{width}'>{capt}</figure>"
 
 
 def table_html(df: pd.DataFrame, max_rows: int = 30) -> str:
@@ -82,36 +100,49 @@ def top_hits_images(ctx, mode: str, R: pd.DataFrame, S: Summary, n: int, log) ->
     obs = a.obs
     # best unit per peak, targeted hits first, then the rest by p
     # anatomical regions only (territories can exist on few slides), tested rows only
-    best = R[(R["unit_kind"] == "region") & R["p_ttest"].notna()].sort_values("p_ttest").drop_duplicates("peak")
+    pcol = "p_primary" if "p_primary" in R else "p_ttest"
+    best = R[(R["unit_kind"] == "region") & R[pcol].notna()].sort_values(pcol).drop_duplicates("peak")
     hits = pd.concat([best[best["targeted"] & best["significant"]], best[~best["targeted"] & best["significant"]],
                       best[~best["significant"]]]).drop_duplicates("peak").head(n)
     if hits.empty:
         return None
     ctl, mut = ctx.cfg["project"]["genotypes"]["control"], ctx.cfg["project"]["genotypes"]["mutant"]
     slides = sorted(obs.slide.unique())
-    fig, axes = plt.subplots(len(hits), 2 * len(slides), figsize=(1.25 * 2 * len(slides), 1.35 * len(hits) + 0.6),
-                             squeeze=False)
+    asp = figstyle.section_aspect(obs)
+    fig, axes = figstyle.image_grid(len(hits), 2 * len(slides), 1.0, asp, title_h=0.08, wspace_in=0.04, right_in=0.55)
+    um = float(ctx.get("acquisition.pixel_size_um", 50))
     for r, (_, h) in enumerate(hits.iterrows()):
         j = a.var_names.get_loc(h["peak"])
         v = np.asarray(a.X[:, j]).ravel()
         vmax = np.percentile(v, 99.5)
+        im = None
         for k, s in enumerate(slides):
             for c, g in enumerate((ctl, mut)):
                 ax = axes[r, 2 * k + c]
                 sub = obs[(obs.slide == s) & (obs.genotype == g)]
                 if len(sub):
                     img, *_ = section_image(obs, v, s, sub["section"].iloc[0])
-                    ax.imshow(img, vmin=0, vmax=vmax, cmap=ctx.get("report.cmap", "viridis"), interpolation="nearest")
-                ax.set_xticks([]); ax.set_yticks([])  # noqa: E702
+                    im = ax.imshow(img, vmin=0, vmax=vmax, cmap=ctx.get("report.cmap", "viridis"), interpolation="nearest")
+                    if r == len(hits) - 1 and k == 0 and c == 0:
+                        figstyle.scalebar(ax, um, color="white")
+                figstyle.image_axes(ax)
                 if r == 0:
-                    ax.set_title(f"{s} {'Ctl' if g == ctl else 'KO'}", fontsize=7)
+                    ax.set_title(f"{s} {'Control' if g == ctl else 'KO'}", fontsize=6.5, fontweight="normal",
+                                 color=figstyle.CONTROL if g == ctl else figstyle.MUTANT)
         lab = str(h.get("label", h["peak"]))
-        axes[r, 0].set_ylabel(f"{lab[:24]}\n{h['unit']} log2FC {h['log2fc']:+.2f}", fontsize=6, rotation=0,
-                              ha="right", va="center")
-    fig.suptitle(f"{mode}: top hits, normalized intensity, one colour scale per row (Control | CLN3 KO per slide)",
-                 fontsize=9)
-    S.fig(fig, "top_hits_images.png", dpi=110)
-    return ctx.output_root / S.figures[-1]
+        axes[r, 0].set_ylabel(f"{lab[:28]}\n{figstyle.region_name(h['unit'])}, log2FC {h['log2fc']:+.2f}",
+                              fontsize=6.5, rotation=0, ha="right", va="center", labelpad=4)
+        if im is not None:
+            figstyle.side_colorbar(fig, im, axes[r, -1])
+    figstyle.title(fig, f"{figstyle.mode_name(mode)}: top differential ions",
+                   "Normalized intensity; Control and CLN3 KO section of each slide side by side, one colour scale per row")
+    S.fig(fig, "top_hits_images.png", dpi=200, caption=(
+        f"Ion images of the {len(hits)} strongest differential ions ({figstyle.mode_name(mode).lower()}), hypothesis "
+        "classes first. Each row is one ion; columns show the Control (top section) and CLN3 KO (bottom section) "
+        "of each slide, which share a colour scale (0 to the 99.5th percentile of all pixels, TIC-normalized). "
+        "Row labels give the region where the ion was most significant and its log2 fold change (KO / Control, "
+        "mean of per-slide differences of per-animal means). Scale bar, 1 mm."))
+    return ctx.output_root / S.figures[-1][0]
 
 
 CAVEATS = [
@@ -130,8 +161,9 @@ CAVEATS = [
     "suppression can differ between regions.",
     "<b>Registration is approximate.</b> The CCF has no true bregma; AP levels and region borders come from "
     "an automatic fit (check the overlays), and the KO brain may be atrophied.",
-    "<b>The KO line is still to be confirmed</b> (whole-body vs conditional; IDs start with cKO). Outputs say "
-    "'CLN3 KO' for now.",
+    "<b>Model:</b> whole-body CLN3 knockout made from embryonic stem cells on a "
+    "C57BL/6 background. Mice were 6 months old; CLN3 pathology is "
+    "progressive, so changes at this age may be small.",
 ]
 
 
@@ -204,8 +236,17 @@ def class_section(ctx, mode, fig) -> str:
     R = pd.read_csv(p)
     pair_cols = [c for c in R.columns if c.startswith("pair_")]
     show = [c for c in ["unit", "feature", "kind", "n_species", "log2fc", "pct_change", "ci_low", "ci_high",
-                        "p_ttest", "p_wilcoxon", "q_bh", "n_pairs_up"] + pair_cols if c in R]
-    return ("<h3>Class totals and ratios (pre-specified)</h3><p class='small'>Species of a class added up per "
+                        "n_pairs_up", "p_ttest", "q_bh", "p_gradient_corrected"] + pair_cols if c in R]
+    prim = ""
+    if "primary" in R and R["primary"].any():
+        pc = [c for c in ["unit", "feature", "log2fc", "pct_change", "ci_low", "ci_high", "n_pairs_up", "n_pairs",
+                          "p_ttest", "q_primary", "p_gradient_corrected", "p_median_norm", "log2fc_Female",
+                          "log2fc_Male", "I2_sex"] if c in R]
+        prim = ("<h3>Primary endpoints (pre-specified, own BH family)</h3><p class='small'>Named in advance in "
+                "config.yaml (class_tests.primary) and corrected only among themselves (<code>q_primary</code>). "
+                "Also shown: the same test after removing the position gradient, and with median normalization.</p>"
+                + table_html(R[R["primary"]][pc], 20))
+    return (prim + "<h3>Class totals and ratios (pre-specified)</h3><p class='small'>Species of a class added up per "
             "animal and region; ratios within the same animal and region. One BH family per mode "
             "(<code>q_bh</code>). pair_&lt;slide&gt; = that slide's log2(Mutant/Control).</p>"
             + table_html(R.sort_values("p_ttest")[show], 25)
@@ -269,15 +310,17 @@ def main():
         R = pd.read_csv(dpath) if dpath.exists() else None
         out.append("<h3>Differential: hypothesis classes</h3>")
         if R is not None:
-            show = [c for c in ("unit", "label", "hypothesis", "log2fc", "ci_low", "ci_high", "p_ttest", "q_targeted",
-                                "p_wilcoxon", "n_pairs", "matches_hypothesis", "could_be_position", "ambiguous") if c in R]
+            pcol = "p_primary" if "p_primary" in R else "p_ttest"
+            show = [c for c in ("unit", "label", "hypothesis", "log2fc", "ci_low", "ci_high", "n_pairs_up", "n_pairs",
+                                pcol, "q_targeted", "p_ttest", "p_gradient_corrected", "matches_hypothesis",
+                                "could_be_position", "ambiguous") if c in R]
             T = R[R["targeted"] & R["unit"].isin(["whole_section", "white_matter", "corpus_callosum", "wm_lipid",
-                                                   "gm_lipid", "cortex", "hippocampus", "thalamus"]) & R["p_ttest"].notna()]
-            out.append(table_html(T.sort_values("p_ttest")[show], 40))
+                                                   "gm_lipid", "cortex", "hippocampus", "thalamus"]) & R[pcol].notna()]
+            out.append(table_html(T.sort_values(pcol)[show], 40))
             out.append(img_tag(fig("09_differential", "forest_hypothesis.png"), "75%"))
             out.append(class_section(ctx, mode, fig))
             out.append("<h3>Differential: untargeted, top per region</h3>")
-            U = R[R.unit_kind == "region"].sort_values("p_ttest").groupby("unit").head(5)
+            U = R[R.unit_kind == "region"].sort_values(pcol).groupby("unit").head(5)
             out.append(table_html(U[[c if c != "q_targeted" else "q_all" for c in show]], 60))
             out.append(img_tag(fig("09_differential", "volcano_regions.png")))
             ti = top_hits_images(ctx, mode, R, S, int(ctx.get("report.top_n_hits", 12)), log)
