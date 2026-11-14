@@ -5,7 +5,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if command -v mamba >/dev/null 2>&1; then CONDA=mamba; else CONDA=conda; fi
+if command -v mamba >/dev/null 2>&1; then CONDA=mamba
+elif command -v conda >/dev/null 2>&1; then CONDA=conda
+else
+  echo "conda/mamba not found. Install Miniforge first: https://github.com/conda-forge/miniforge"
+  echo "  (Mac with Homebrew: brew install --cask miniforge, then run: conda init zsh, and reopen the Terminal)"
+  exit 2
+fi
 if $CONDA env list | grep -qE '^cln3-msi[[:space:]]'; then
   echo "env cln3-msi exists, updating it"
   $CONDA env update -n cln3-msi -f environment.yml
@@ -21,5 +27,7 @@ $CONDA run -n cln3-msi python -m ipykernel install --user --name cln3-msi --disp
 
 echo
 echo "Done. Next:"
-echo "  conda activate cln3-msi"
+echo "  conda activate cln3-msi              # if it says 'run conda init': conda init zsh, then reopen the Terminal"
+echo "  bash bin/run_synthetic_test.sh       # check the installation on fake data (~5 min)"
+echo "  then set paths.data_root in config.yaml and run:"
 echo "  python scripts/00_setup.py --config config.yaml --download"
