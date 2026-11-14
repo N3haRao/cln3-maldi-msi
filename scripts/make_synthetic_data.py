@@ -5,7 +5,7 @@
 What you get (all small, ~400 MB total, a minute or two to write):
 
   synthetic_data/
-    Brain - Pilar - Spatial (synthetic)/        <- use as data_root
+    MSI data (synthetic)/        <- use as data_root
       imzML files for biostats/
         Lipid Negative/       slide_{e,f,g,i,j,k}_lip_neg.imzML/.ibd   continuous + PROFILE
         Lipid Positive/       slide_..._lip_pos.imzML/.ibd             processed + CENTROID
@@ -313,7 +313,7 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     out = Path(args.out).resolve()
-    data_root = out / "Brain - Pilar - Spatial (synthetic)"
+    data_root = out / "MSI data (synthetic)"
     folders = {"lip_neg": "Lipid Negative", "lip_pos": "Lipid Positive", "met_neg": "Metabolite Negative"}
     for f in folders.values():
         (data_root / "imzML files for biostats" / f).mkdir(parents=True, exist_ok=True)
