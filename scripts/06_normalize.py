@@ -201,12 +201,14 @@ def main():
         fig, axes = plt.subplots(1, len(N["methods"]), figsize=(3.4 * len(N["methods"]), 2.9), squeeze=False,
                                  sharey=False, gridspec_kw={"wspace": 0.3})
         key = a.obs["slide"].astype(str) + " " + a.obs["section"].str[0]
+        gcol = figstyle.genotype_colors(ctx)
+        geno_of_key = pd.Series(a.obs["genotype"].to_numpy(), index=key.to_numpy()).groupby(level=0).first()
         for ax, m in zip(axes[0], N["methods"]):
             groups = sorted(key.unique())
             bp = ax.boxplot([np.log2(f[m][(key == g).to_numpy()]) for g in groups], showfliers=False, patch_artist=True,
                             widths=0.6, medianprops={"color": "k", "lw": 0.8})
             for patch, g in zip(bp["boxes"], groups):
-                patch.set_facecolor(figstyle.TOP if g.endswith("T") else figstyle.BOTTOM)
+                patch.set_facecolor(gcol.get(geno_of_key.get(g), figstyle.GREY))
                 patch.set_alpha(0.6); patch.set_linewidth(0.6)  # noqa: E702
             ax.set_xticks(range(1, len(groups) + 1), groups, rotation=90)
             ax.set_title(f"{m.upper() if len(m) <= 4 else m.capitalize()} normalization")
@@ -217,7 +219,7 @@ def main():
         S.fig(fig, "size_factors.png", caption=(
             "Distribution of per-pixel size factors (log2) in each section for each normalization method; boxes "
             "show the interquartile range and median, whiskers 1.5 times the interquartile range (outliers not "
-            "shown). Blue, Top (Control) sections; vermillion, Bottom (CLN3 KO) sections. Statistics use "
+            "shown). Blue, Control sections; vermillion, CLN3 KO sections (T, Top; B, Bottom). Statistics use "
             f"{N.get('for_stats', 'tic').upper()} normalization."))
 
         # write the normalized object: X = method for stats
@@ -255,8 +257,9 @@ def main():
         best = cmp[cmp.method != "raw"].sort_values("median slide partial R2").iloc[0]["method"]
         S.p(f"Used for statistics: **{use}** (fixed in the config). Lowest slide effect here: {best}. "
             "If they differ a lot, decide before running 09; switching after seeing results would bias them.")
-        S.p("Note: with Control always on top and Mutant always on the bottom, no per-pixel "
-            "normalization can remove a top-to-bottom technical trend; see the 03 gradient check.")
+        S.p("Note: within each slide genotype and position coincide (female slides: Control on Top; male "
+            "slides: CLN3 KO on Top), so no per-pixel normalization can remove a top-to-bottom technical trend; "
+            "see the 03 gradient check.")
         S.kv({"pixels": out.n_obs, "peaks": out.n_vars, "embedding batch correction (plots only)": emb})
         log.info(f"summary: {S.write()}")
         del a, X, Xn, Z, out
