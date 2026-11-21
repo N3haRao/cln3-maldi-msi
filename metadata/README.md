@@ -38,7 +38,13 @@ provenance record of every run stores a hash of the sheet that was used
 
 ## A new study
 
-Copy `sample_sheet.csv`, keep the header row, and fill in one row per section. If the
-sections on a slide turn out to be the other way round, do not edit the sheet after seeing
-results: set `qc.sections.flip_slides` in a separate config (see `config.flipJ.yaml`) and
-compare the runs with phase 11.
+Copy `sample_sheet.csv`, keep the header row, and fill in one row per section.
+`position_on_slide` must give where each animal actually is on the glass. It does not have to
+be the same genotype on Top for every slide: in this study the female slides have the Control on
+Top and the male slides the knockout (the male sections were mounted in animal-number order).
+
+If the sections on a slide may be the other way round, do not edit the sheet because of the
+results: check the sectioning and mounting records first. If they confirm it, correct
+`position_on_slide` and rerun from phase 02. To see how much a suspected swap matters before the
+records are checked, set `qc.sections.flip_slides` in a separate config and compare the two
+runs with phase 11.
