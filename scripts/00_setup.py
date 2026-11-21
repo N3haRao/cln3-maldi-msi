@@ -77,8 +77,8 @@ def main():
     S.h("Sample sheet")
     try:
         sheet = samples.load_sheet(ctx)
-        S.p(f"{len(sheet)} animals on {sheet.slide.nunique()} slides; every slide has one Control (Top) "
-            "and one Mutant (Bottom) according to the sheet.")
+        S.p(f"{len(sheet)} animals on {sheet.slide.nunique()} slides; every slide has one Control and one "
+            "Mutant, one Top and one Bottom section, according to the sheet.")
         S.table(samples.section_table(sheet))
         log.info("sample sheet OK")
     except samples.SampleSheetError as e:
