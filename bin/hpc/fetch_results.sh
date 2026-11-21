@@ -3,7 +3,7 @@
 # NOT the big .h5ad matrices.
 #   bash bin/hpc/fetch_results.sh                 # into ~/cln3_msi_outputs_from_hpc
 #   bash bin/hpc/fetch_results.sh ~/somewhere
-#   RUN=flipJ bash bin/hpc/fetch_results.sh        # the slide J sensitivity run -> ~/cln3_msi_outputs_from_hpc_flipJ
+#   RUN=test2 bash bin/hpc/fetch_results.sh        # outputs_test2 -> ~/cln3_msi_outputs_from_hpc_test2
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 DEST="${1:-$HOME/cln3_msi_outputs_from_hpc${RUN:+_$RUN}}"
