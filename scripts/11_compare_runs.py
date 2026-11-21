@@ -1,10 +1,10 @@
 """Phase 11 (optional): compare this run with another run of the pipeline, mode by mode.
 
-    python scripts/11_compare_runs.py --config config.flipJ.yaml --baseline config.yaml
-    python scripts/11_compare_runs.py --config config.flipJ.yaml --baseline ~/cln3_msi_outputs
+    python scripts/11_compare_runs.py --config config.yaml --baseline ~/cln3_msi_outputs_old
+    python scripts/11_compare_runs.py --config config.yaml --baseline other_config.yaml --labels old,new
 
-Made for the slide J sensitivity run (config.flipJ.yaml: same data, slide J's sections
-swapped), but it works for any two runs, e.g. before/after a config change. --baseline is
+Made to compare runs with different section labels (same data, a slide's sections swapped),
+but it works for any two runs, e.g. before/after a config change. --baseline is
 either a config file (its output_root is used) or an output folder. The baseline outputs
 are only read; everything is written into THIS run's output folder:
 
