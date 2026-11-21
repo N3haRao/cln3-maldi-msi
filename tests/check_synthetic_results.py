@@ -37,7 +37,12 @@ def main():
     check("03 slide G has the strongest gradient", g["matrix_off_pred_log2_bottom_vs_top"].idxmax() == "G",
           g["matrix_off_pred_log2_bottom_vs_top"].round(3).to_dict())
     sec = pd.read_csv(R / "03_qc_all" / "lip_neg" / "sections.csv")
-    check("03 Top sections are the Controls", (sec.loc[sec.position == "Top", "genotype"] == "Control").all())
+    sheet = pd.read_csv(Path(__file__).resolve().parents[1] / "metadata" / "sample_sheet.csv")
+    lay = sec.merge(sheet, left_on=["slide", "position"], right_on=["slide", "position_on_slide"], suffixes=("", "_sheet"))
+    check("03 every section carries the sheet's animal and genotype at its position",
+          len(lay) == len(sec) and (lay.animal_id == lay.animal_id_sheet).all() and (lay.genotype == lay.genotype_sheet).all())
+    males = lay[lay.sex == "Male"]
+    check("03 male slides have the KO on Top (corrected sheet)", (males.loc[males.position == "Top", "genotype"] == "Mutant").all())
     area = sec.pivot_table(index="slide", columns="genotype", values="area_mm2")
     check("03 Mutant sections smaller (planted 8% atrophy)", (area["Mutant"] < area["Control"]).all())
 
