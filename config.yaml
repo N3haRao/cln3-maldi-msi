@@ -78,10 +78,15 @@ qc:
     # were imaged rotated, so the sections sit side by side ("auto" detects that).
     split_axis: auto
     # true: the section with the smaller row/column index (upper one, or LEFT one when side by
-    # side) is the sample sheet's "Top" (= Control). false: the other way round.
+    # side) is the sample sheet's "Top" position. false: the other way round.
+    # Which animal is at Top/Bottom comes from the sample sheet (position_on_slide), NOT from
+    # here: female slides E, F, G have the Control on Top, male slides I, J, K the KO on Top
+    # (the male sections were mounted in animal-number order). If the sheet has an animal at
+    # the wrong position, fix the sheet. These two switches are only for when the image
+    # detection calls the wrong section "Top".
     # CHECK sections_<slide>.png against the slide layout records before trusting the statistics.
     top_is_low_index: true
-    flip_slides: []                  # e.g. ["J"] if one slide turns out reversed
+    flip_slides: []                  # image detection reversed on a slide, e.g. ["J"]
     manual_split: {}                 # e.g. {E: 170}: force the split at row/column 170 on slide E
   gradient:
     n_bins_y: 20
@@ -420,7 +425,7 @@ lipizones:
 # profiles correlate positively, or at least not negatively. A slide whose profile is the
 # mirror image of the others may have its two sections swapped. This is only a warning:
 # never relabel a slide because of it. Check the sectioning/mounting records, and only if
-# they confirm a swap, list the slide in qc.sections.flip_slides and rerun from 03.
+# they confirm a swap, correct position_on_slide in the sample sheet and rerun from 02.
 pair_check:
   enabled: true
   units: [whole_section, white_matter, cortex]
