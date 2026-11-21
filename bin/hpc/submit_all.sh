@@ -11,8 +11,10 @@
 # own chain and the report, and leaves the other modes running.
 #   FROM=05 bash bin/hpc/submit_all.sh    # skip 01-04 (their outputs are reused)
 #   FROM=09b bash bin/hpc/submit_all.sh   # only lipizones + report (needs 09 outputs)
-#   RUN=flipJ bash bin/hpc/submit_all.sh  # sensitivity run with config.hpc.flipJ.yaml in outputs_flipJ;
+#   RUN=test2 bash bin/hpc/submit_all.sh  # a sensitivity run with config.hpc.test2.yaml in outputs_test2;
 #                                         # adds phase 11 (compare with the main outputs) after 10
+#   COMPARE_WITH=outputs_test2 bash bin/hpc/submit_all.sh
+#                                         # phase 11 compares with that folder (under the work folder) instead
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/settings.sh"
@@ -84,7 +86,17 @@ for mode in $ORDERED_MODES; do
 done
 deps=$(IFS=:; echo "${last_ids[*]:-}")
 j=$(submit 10 "" "$deps"); echo "10 report             job $j"
-if [[ -n "$RUN" && -d "$HPC_WORK/outputs/results/09_differential" ]]; then
+COMPARE_WITH="${COMPARE_WITH:-}"
+if [[ -n "$COMPARE_WITH" ]]; then
+  base="$HPC_WORK/${COMPARE_WITH#"$HPC_WORK"/}"
+  if [[ -d "$base/results/09_differential" ]]; then
+    lab="$(basename "$base")"; lab="${lab#outputs_}"
+    j=$(PHASE_ARGS="--baseline $base --labels $lab,${RUN:-main}" submit 11 "" "$j")
+    echo "11 compare with $lab  job $j"
+  else
+    echo "COMPARE_WITH: $base has no 09 results, phase 11 skipped"
+  fi
+elif [[ -n "$RUN" && -d "$HPC_WORK/outputs/results/09_differential" ]]; then
   j=$(PHASE_ARGS="--baseline $HPC_WORK/outputs --labels main,$RUN" submit 11 "" "$j")
   echo "11 compare with main  job $j"
 fi
