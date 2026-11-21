@@ -208,7 +208,8 @@ download of LIPID MAPS or HMDB at a later date may differ slightly.
 
 | change in `config.yaml` | rerun from |
 |---|---|
-| `qc.sections.flip_slides`, `top_is_low_index`, `manual_split` (which section is which animal) | 03 |
+| `metadata/sample_sheet.csv` (`position_on_slide`: which animal is at Top/Bottom) | 02 |
+| `qc.sections.flip_slides`, `top_is_low_index`, `manual_split` (which image section is Top) | 03 |
 | `qc.tissue.*` (tissue mask, edge trim) | 03 |
 | `peaks.*` (peak picking, cap) | 04 |
 | `annotation.*`, `hypotheses` | 05 |
@@ -219,7 +220,13 @@ download of LIPID MAPS or HMDB at a later date may differ slightly.
 | `lipizones.*` | 09b |
 | `report.*` | 10 |
 
-Example, if the sectioning records confirm that slide J's sections are swapped:
+Example: the sectioning records showed that the male slides (I, J, K) have the knockout on
+Top, not the control. The fix was in the sample sheet: `position_on_slide` swapped for those six
+animals (genotypes and animal IDs unchanged). Then rerun everything:
+`bash bin/run_all.sh config.yaml` (or `bash bin/hpc/start_on_hpc.sh`).
+
+`flip_slides` is for the other mistake, when the sheet is right but the image detection calls
+the wrong section Top on a slide (check `sections_<slide>.png`):
 
 ```yaml
 qc:
