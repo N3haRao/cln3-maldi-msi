@@ -21,7 +21,8 @@ The three modes use the three storage/spectrum combinations on purpose, so every
 the pipeline (memmap fast path, binning, centroid vs profile) gets exercised.
 
 What's planted in the biology:
-  * two sections per slide, Control on top, Mutant (smaller, ~8% "atrophy") on the bottom
+  * two sections per slide, placed as the sample sheet says (female slides Control on Top,
+    male slides Mutant on Top); the Mutant section is smaller (~8% "atrophy")
   * white matter (corpus callosum-like band) is rich in sulfatides and HexCer
   * Mutant: Cer, BMP/PG, HexCer, lyso-SM and glycerophosphodiesters go UP,
             sulfatide SHexCer 42:2;O2 goes DOWN in white matter
