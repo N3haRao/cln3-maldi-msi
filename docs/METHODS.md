@@ -25,7 +25,7 @@ Contents
 | Animals | 12 mice: 6 CLN3 knockout ("Mutant"), 6 controls |
 | Tissue | one coronal brain section per animal, 10 µm, around Bregma −1.6 to −2.2 mm |
 | Slides | 6 glass slides (E, F, G, I, J, K), each with one control and one knockout section |
-| Position | the control is always the "Top" section, which in the exported images is the left one |
+| Position | female slides (E, F, G): control on the "Top" section; male slides (I, J, K): knockout on Top. "Top" is the left section in the exported images. The core mounted the male sections in animal-number order, which reversed them relative to the original sample sheet; the sheet now records the actual layout |
 | Sex | slides E, F, G female; slides I, J, K male (both animals on a slide share sex) |
 | Acquisition runs | E, F, G in runs 1, 2, 3 (one slide each); I, J, K together in run 4 |
 | Ion modes | lipids negative (m/z 300 to 2,000), lipids positive (m/z 300 to 2,000), metabolites negative (m/z 50 to 750) |
@@ -44,8 +44,9 @@ are measurements within an animal, not replicates.
 * Two animals on one slide share the matrix coating, the instrument run and the day. This
   makes the slide a natural block, and comparing the two animals within a slide removes
   everything they share.
-* Genotype is completely confounded with position on the slide (Section 5.1).
-* Sex is completely confounded with acquisition run (Section 5.2).
+* Within each slide, genotype is confounded with position (Section 5.1). The direction differs
+  by sex: control on Top for the females, knockout on Top for the males.
+* Sex is completely confounded with acquisition run, and with slide orientation (Section 5.2).
 
 ## 2. Data
 
@@ -79,8 +80,10 @@ writes tables, figures and a short summary. Phases 03 to 09 run separately for e
 * **Section split.** The two largest tissue pieces are assigned to the two animals. The
   direction of the split (sections above each other or side by side) is detected from the
   data (`split_axis: auto`); for this dataset the sections are side by side. The left
-  section is the sample sheet's "Top" (`top_is_low_index: true`). A slide can be reversed
-  individually with `flip_slides`, and a split line can be forced with `manual_split`.
+  section is the sample sheet's "Top" (`top_is_low_index: true`); which animal is at Top comes
+  from the sample sheet. If the image detection names the wrong section Top, a slide can be
+  reversed individually with `flip_slides`; if the sheet has the wrong animal at a position,
+  the sheet is corrected instead. A split line can be forced with `manual_split`.
 * **Mass accuracy.** Abundant, well-known ions (for example PI 38:4, PE 40:6 and the main
   sulfatides in lipid negative mode, PC 34:1 adducts in positive mode, taurine and glutamate in
   the metabolite mode), defined by formula in `reference/calibrants.yaml`, are located on each
@@ -366,7 +369,10 @@ covariate. What can be asked is whether the genotype effect differs between the 
 × genotype interaction). This is tested as a Welch t-test of the 3 female pair differences
 against the 3 male ones (`p_sex_difference_exploratory`, with `log2fc_Female` and
 `log2fc_Male`), and summarized as I² (`I2_sex`, 0 = the sexes agree, near 1 = they clearly differ). Because all females were run in runs 1 to 3 and all males in run 4, this is
-equally a run × genotype comparison, and it is reported as exploratory only.
+equally a run × genotype comparison. It is also a slide-orientation × genotype comparison:
+the knockout is the Bottom section on the female slides and the Top section on the male
+slides, so a technical top-to-bottom trend would add to the apparent sex difference. It is
+reported as exploratory only.
 
 ### 4.7 Lipizones (phase 09b, exploratory)
 
@@ -393,23 +399,27 @@ the atlas-region tests, whose regions come from anatomy alone, remain the main a
 
 ### 5.1 Genotype and position: the gradient check
 
-The control is always on the left. A technical trend across the slide (uneven matrix coating,
-instrument drift during the raster) would therefore look exactly like a genotype effect, and no
-statistical model can remove it from this design. Two measures limit the risk:
+Within a slide the two genotypes occupy the two positions: control on the left (Top) on the
+female slides, knockout on the left on the male slides. A technical trend across the slide
+(uneven matrix coating, instrument drift during the raster) therefore looks like a genotype
+effect on each slide. Because the direction is opposite in the two sexes, a trend common to all
+slides partly cancels in the pooled paired estimate (3 slides each way), but it cannot be
+separated from a sex difference in the genotype effect. Two measures limit the risk:
 
 1. **Gradient check (phase 03).** Off-tissue pixels contain matrix but no tissue, so any trend
    in their signal along the split axis is purely technical. A robust (Theil-Sen) slope of the
    log off-tissue matrix signal against position is fitted per slide, and converted into the
-   log2 ratio that this trend alone would produce between the two section centres. In phase 09,
-   a result with the same sign and less than `flag_ratio` = 2 times the median predicted ratio
-   is flagged `could_be_position`. This is a warning, not a correction. As a sensitivity check,
+   log2 ratio that this trend alone would produce between the two section centres, signed by
+   where the knockout sits on that slide. In phase 09, a result with the same sign and less
+   than `flag_ratio` = 2 times the mean predicted ratio over slides (the mean, like the log2
+   fold change itself) is flagged `could_be_position`. This is a warning, not a correction. As a sensitivity check,
    every test is also repeated after subtracting each slide's predicted ratio (Section 4.3b).
 2. **Ratios** (Section 4.5) cancel a trend that scales all signals in a pixel.
 
 ### 5.2 Sex and run
 
-Sex and run vary together (Section 4.6). No model can separate them; sex results are
-descriptive and labelled exploratory.
+Sex, run and slide orientation vary together (Section 4.6). No model can separate them; sex
+results are descriptive and labelled exploratory.
 
 ### 5.3 Slide consistency check (possible label swaps)
 
@@ -426,7 +436,13 @@ The pipeline **never relabels a slide** on the basis of this check: choosing lab
 results would be circular. It reports the flag and, as exploratory extra columns, the class
 tests with the flagged slide left out and flipped. Only independent records (sectioning or
 mounting notes, the slide's loading orientation, the region names in the SCiLS project) can
-justify setting `qc.sections.flip_slides`.
+justify correcting the sample sheet.
+
+In this dataset the check flagged slide J in all three modes under the original sample sheet.
+The sectioning records then showed that the core had mounted every male slide in
+animal-number order, putting the knockout on Top; the sample sheet was corrected for slides
+I, J and K. Under the original sheet slides I and K showed almost no genotype signature, so
+their correction changes little, while J's restores agreement with the female slides.
 
 ## 6. What the analysis cannot do
 
@@ -435,7 +451,8 @@ justify setting `qc.sections.flip_slides`.
   ions of another cannot be distinguished. On-tissue MS/MS or LC-MS/MS of adjacent sections
   would be needed.
 * **Quantify absolutely.** MALDI intensities are relative and depend on local ion suppression.
-* **Separate genotype from position, or sex from run** (Sections 5.1 and 5.2).
+* **Separate genotype from position within a slide, or sex from run and orientation**
+  (Sections 5.1 and 5.2).
 * **Detect small effects with 6 pairs.** Effects need to be consistent in nearly every pair to
   survive correction.
 
