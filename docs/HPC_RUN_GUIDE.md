@@ -187,16 +187,26 @@ FROM=05 bash bin/hpc/start_on_hpc.sh      # rerun from phase 05, reusing the out
 `FROM=03` reruns almost everything, `FROM=09` only the statistics and the report, `FROM=09b`
 only the lipizones and the report.
 
-**Sensitivity run with slide J's sections swapped**, in its own output folder
-(`HPC_WORK/outputs_flipJ`), followed by phase 11, which compares it with the main run:
+A change to the sample sheet (which animal is at Top/Bottom) needs a full rerun. To keep the
+old results, move them aside first (the reference cache stays where it is):
 
 ```bash
-RUN=flipJ bash bin/hpc/start_on_hpc.sh
-RUN=flipJ bash bin/hpc/status.sh
-RUN=flipJ bash bin/hpc/fetch_results.sh   # into ~/cln3_msi_outputs_from_hpc_flipJ
+bash bin/hpc/archive_outputs.sh old_labels   # HPC_WORK/outputs -> HPC_WORK/outputs_old_labels
+bash bin/hpc/start_on_hpc.sh
 ```
 
-`RUN=<name>` works for any `config.hpc.<name>.yaml` you add in the same way.
+**Sensitivity run**: add `config.hpc.<name>.yaml` (inherit `config.hpc.yaml`, set its own
+`output_root` and the setting to test, e.g. `qc.sections.flip_slides`). It runs into
+`HPC_WORK/outputs_<name>` and ends with phase 11, which compares it with the main run:
+
+```bash
+RUN=<name> bash bin/hpc/start_on_hpc.sh
+RUN=<name> bash bin/hpc/status.sh
+RUN=<name> bash bin/hpc/fetch_results.sh   # into ~/cln3_msi_outputs_from_hpc_<name>
+```
+
+`COMPARE_WITH=outputs_<name> bash bin/hpc/start_on_hpc.sh` does it the other way round: the main
+run ends with phase 11 against that folder.
 
 ## 9. Optional: test on fake data on the cluster
 
