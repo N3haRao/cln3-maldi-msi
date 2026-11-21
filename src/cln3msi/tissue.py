@@ -18,9 +18,15 @@ The recipe:
      rows, further left for cols) is "Top" by default. Flip with
      qc.sections.top_is_low_index, or per slide with qc.sections.flip_slides.
 
-"Top" and "Bottom" are the sample sheet's names for the two positions on the slide. When the
-slide was imaged rotated, they show up as left/right in the image, so always check the
-labelled figure (sections_<slide>.png) against the slide layout records.
+"Top" and "Bottom" are the sample sheet's names for the two positions on the slide; the sheet
+says which animal (and so which genotype) is at each. That is not the same on every slide:
+the female slides have the Control on Top, the male slides the KO. When the slide was imaged
+rotated, Top and Bottom show up as left/right in the image, so always check the labelled
+figure (sections_<slide>.png) against the slide layout records.
+
+Two different fixes for two different mistakes:
+  - the sheet has the wrong animal at a position  -> correct position_on_slide in the sheet
+  - the image detection names the wrong section Top -> top_is_low_index / flip_slides
 """
 from __future__ import annotations
 
