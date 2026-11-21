@@ -19,7 +19,9 @@ correlate positively (or at least not negatively). A slide whose profile is the 
 image of the others (clearly negative correlation, the same in several regions) looks like
 its two sections were swapped: wrong sample sheet, or the slide went into the instrument
 the other way round. It's a QC warning. Never relabel a slide because of this; check the
-sectioning and mounting records first, then use qc.sections.flip_slides if they confirm it.
+sectioning and mounting records first, and correct the sample sheet if they confirm it.
+(In this dataset it flagged slide J; the sectioning records then showed that all male slides
+had been mounted with the KO on Top, which the sample sheet now records.)
 """
 from __future__ import annotations
 
