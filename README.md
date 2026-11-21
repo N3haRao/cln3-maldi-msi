@@ -11,8 +11,7 @@ as SLURM jobs on a cluster. Every path and parameter lives in one file, `config.
 > **Data policy.** The imaging data are **not** in this repository. Nothing
 > in this code uploads data anywhere. The only network access is the one-time download of
 > public reference databases in `00_setup.py --download` (LIPID MAPS, HMDB, SwissLipids, the
-> Allen Mouse Brain Atlas). The raw data folder is only ever read; the code refuses to write
-> inside it.
+> Allen Mouse Brain Atlas). 
 
 ## Documentation
 
@@ -33,7 +32,7 @@ starting with `#` are comments.
 #    e.g. with Homebrew:  brew install --cask miniforge   then close and reopen the Terminal
 
 # 2. Get the code (or download the ZIP from GitHub: Code > Download ZIP, and unzip it)
-git clone <URL of this repository> cln3-maldi-msi
+git clone https://github.com/N3haRao/cln3-maldi-msi.git
 cd cln3-maldi-msi
 
 # 3. Create the Python environment (once, 5 to 15 minutes)
@@ -68,7 +67,6 @@ traced to the exact code and settings that produced it.
 ```
 config.yaml              every path and parameter; the only file you normally edit
 config.test.yaml         the synthetic test config (inherits config.yaml, overrides a few keys)
-config.flipJ.yaml        sensitivity run with slide J's sections swapped (inherits config.yaml)
 config.hpc*.yaml         the same for a SLURM cluster (paths only, set from bin/hpc/settings.sh)
 environment.yml          conda env, Python 3.11 (pins in requirements.txt)
 requirements-optional.txt   harmonypy, jupyterlab (uMAIA: separate env, see below)
@@ -252,14 +250,17 @@ python scripts/00_setup.py --config config.yaml \
 ### Design limits the code respects
 
 1. **Paired by slide**, n = 6 pairs; slide is the pairing factor.
-2. **Genotype = position** (Control always on top). 03 measures the top-to-bottom trend in the
-   off-tissue DAN signal and TIC; 09 flags hits within `qc.gradient.flag_ratio` x that trend
-   (`could_be_position`). Not corrected, only reported.
-3. **Sex = run** (females runs 1-3, males run 4). Sex results are labelled exploratory.
+2. **Genotype = position within a slide.** Female slides (E, F, G) have the Control on Top,
+   male slides (I, J, K) the knockout on Top (see "Sample layout" below). 03 measures the
+   top-to-bottom trend in the off-tissue DAN signal and TIC; 09 turns it into a predicted
+   log2(Mutant/Control) per slide, signed by where the Mutant sits, and flags hits within
+   `qc.gradient.flag_ratio` x the mean of that (`could_be_position`). Not corrected, only reported.
+3. **Sex = run = orientation** (females runs 1-3, males run 4; the genotype order on the slide
+   differs by sex). Sex results are labelled exploratory.
 4. **Animal = unit.** All tests are on per-animal means, never on pixels.
 5. **Labels are checked, never changed by the code.** 09 compares the slides' KO/Control
    difference profiles; a slide that runs opposite to the others is flagged as a possible swap.
-   Only the sectioning/mounting records can confirm it; then set `qc.sections.flip_slides`.
+   Only the sectioning/mounting records can confirm it; then correct the sample sheet.
 
 ---
 
@@ -278,6 +279,7 @@ Everything is driven from the Mac terminal by the scripts in `bin/hpc/`:
 | `submit_all.sh` | cluster login node | submits 01 → 02, and per mode 03 → 09b as dependent jobs, then 10 |
 | `job_phase.sbatch` | compute node | one phase (4 cores, 32 GB by default) |
 | `status.sh` / `fetch_results.sh` | Mac | queue + progress / copy summaries, figures, report back |
+| `archive_outputs.sh` | Mac | move a finished run's outputs aside on the cluster (cache stays) before a full rerun |
 
 ```bash
 cd ~/path/to/cln3-maldi-msi
@@ -295,34 +297,29 @@ write to their own: see "Running as another user" in `docs/HPC_RUN_GUIDE.md`. Ed
 config on the Mac and re-run `upload_to_hpc.sh --code` (the upload mirrors the repo, so edits
 made directly on the cluster get overwritten). To rerun from a phase: `FROM=05 bash bin/hpc/start_on_hpc.sh`.
 
-## Sensitivity run: slide J flipped, compared with the main run
+## Sample layout: the male slides have the knockout on Top
 
-The main run uses the sample sheet as it is. In all three ion modes, slide J's knockout-minus-
-Control profile is the mirror image of the other slides, as expected if its two sections were
-mounted the other way round. To see how much the results depend on slide J's labels, the same
-analysis runs with J's two sections swapped, into its own output folder, and phase 11 lines the
-two runs up.
+On the female slides (E, F, G) the Control is the Top section; on the male slides (I, J, K) the
+knockout is, because the male sections were mounted in animal-number order. The sample sheet
+records this actual layout, and every figure colours sections by genotype (Control blue, knockout
+vermillion), so the male slides show vermillion on Top.
 
-On a cluster, from the Mac (about the time of a full run; the main outputs are only read):
+How it was found: with an earlier sheet that had the Control on Top everywhere, the slide
+consistency check (phase 09) flagged slide J in all three ion modes as the mirror image of the
+female slides, and slides I and K showed almost no genotype signature. The sectioning records
+then confirmed the reversed layout for all three male slides, and the sheet was corrected.
+
+To compare two labelings (for example while records are being checked), run one with
+`qc.sections.flip_slides` set in its own config, `config.hpc.<name>.yaml` with its own
+`output_root`, and let phase 11 line the runs up:
 
 ```bash
-cd ~/path/to/cln3-maldi-msi
-bash bin/hpc/upload_to_hpc.sh --code
-RUN=flipJ bash bin/hpc/start_on_hpc.sh      # config.hpc.flipJ.yaml -> HPC_WORK/outputs_flipJ, then phase 11
-RUN=flipJ bash bin/hpc/status.sh
-RUN=flipJ bash bin/hpc/fetch_results.sh     # -> ~/cln3_msi_outputs_from_hpc_flipJ
+RUN=<name> bash bin/hpc/start_on_hpc.sh            # config.hpc.<name>.yaml -> HPC_WORK/outputs_<name>, then phase 11 vs main
+COMPARE_WITH=outputs_<name> bash bin/hpc/start_on_hpc.sh   # or: main run, ending with phase 11 vs that folder
+bash bin/hpc/archive_outputs.sh <label>            # move a finished main run aside (cache stays) before a full rerun
 ```
 
-On the Mac directly (no cluster): `bash bin/run_all.sh config.flipJ.yaml`, then
-`python scripts/11_compare_runs.py --config config.flipJ.yaml --baseline config.yaml --labels main,flipJ`.
-
-Results: `summaries/11_compare_<mode>.md` and `results/11_compare/<mode>/` in the flipJ output
-folder (class tests, single peaks, slide consistency and counts, both runs side by side).
-For a like-for-like comparison, the main run should have been run with the same code: if the
-summary says the code differs, rerun the main run from 09 first (`FROM=09 bash bin/hpc/start_on_hpc.sh`).
-
-`config.test.flipJ.yaml` does the same on the synthetic data (whose labels are correct), as a
-check of the machinery: there, flipping J makes the slide consistency check flag J.
+On the Mac directly: `python scripts/11_compare_runs.py --config config.yaml --baseline <other output folder> --labels other,main`.
 
 ## Figures
 
@@ -345,12 +342,12 @@ synthetic data show it). Every test is per animal, paired over slides, never per
 lipids that define a lipizone also decide which pixels fall in it, so lipid and class tests
 inside lipizones are exploratory; the 09 atlas-region tests stay the main analysis.
 
-On a cluster, for an existing run (needs its 09 outputs), e.g. the flipJ run:
+On a cluster, for an existing run (needs its 09 outputs):
 
 ```bash
 bash bin/hpc/upload_to_hpc.sh --code
-RUN=flipJ FROM=09b bash bin/hpc/start_on_hpc.sh     # 09b for each mode, then 10 (and 11)
-RUN=flipJ bash bin/hpc/fetch_results.sh
+FROM=09b bash bin/hpc/start_on_hpc.sh     # 09b for each mode, then 10
+bash bin/hpc/fetch_results.sh
 ```
 
 UMAP is used for the embedding plot if `umap-learn` is installed, otherwise the first two
@@ -369,8 +366,8 @@ fragments (`reference/msms_diagnostic_fragments.csv`, e.g. m/z 96.96 and 241.00 
 bash bin/hpc/upload_d_to_hpc.sh                 # or: bash bin/hpc/upload_d_to_hpc.sh "/path/x.d"
 METADATA_ONLY=1 bash bin/hpc/upload_d_to_hpc.sh  # only the small metadata files (no spectra): enough to
                                                  # see whether any MS/MS was acquired at all
-RUN=flipJ bash bin/hpc/run_msms_check.sh        # one SLURM job; installs the reader library once
-RUN=flipJ bash bin/hpc/fetch_results.sh         # summaries/msms_check.md, results/msms_check/
+bash bin/hpc/run_msms_check.sh                  # one SLURM job; installs the reader library once
+bash bin/hpc/fetch_results.sh                   # summaries/msms_check.md, results/msms_check/
 ```
 
 On a Mac without a cluster, the metadata part runs directly (the Bruker reader library for
