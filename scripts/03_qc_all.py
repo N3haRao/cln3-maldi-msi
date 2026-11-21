@@ -12,11 +12,13 @@ Per mode it writes
   processed/<mode>/qc/*.npz                     section labels + mean spectra (used by 04)
   figures/03_qc_all/<mode>/...                  incl. sections_all.png, the one to check first
 
-About the gradient check: Control is always on top and Mutant always on the bottom, so
-any technical top-to-bottom trend (matrix coating, laser drift during the run, ...) looks
-exactly like a genotype effect. We can't correct for that. What we can do is measure the
-trend where there's no biology (the off-tissue matrix signal) and flag hits that are not
-clearly bigger than it.
+About the gradient check: on each slide one genotype is on the Top section and the other on
+the Bottom (females: Control on Top; males: CLN3 KO on Top, as the sample sheet records),
+so within a slide any technical top-to-bottom trend (matrix coating, laser drift during
+the run, ...) looks like a genotype effect. Because the direction differs between the
+sexes, such a trend partly cancels in the pooled paired test, but it adds to the apparent
+female-versus-male difference in the genotype effect. We measure the trend where there's
+no biology (the off-tissue matrix signal); 09 flags hits that are not clearly bigger than it.
 """
 from __future__ import annotations
 
@@ -91,7 +93,8 @@ def main():
             img[z["positions"] == TOP] = 1
             img[z["positions"] == BOTTOM] = 2
             from matplotlib.colors import ListedColormap
-            ax.imshow(img, cmap=ListedColormap(["#F2F2F2", figstyle.TOP, figstyle.BOTTOM]), vmin=-0.5, vmax=2.5,
+            pc = figstyle.section_genotype_colors(ctx, sheet, s)
+            ax.imshow(img, cmap=ListedColormap(["#F2F2F2", pc["Top"], pc["Bottom"]]), vmin=-0.5, vmax=2.5,
                       interpolation="nearest")
             sub = sheet[sheet.slide == s].set_index("position_on_slide")
             for code, posname in ((TOP, "Top"), (BOTTOM, "Bottom")):
@@ -99,18 +102,19 @@ def main():
                 if len(yy):
                     g = sub.loc[posname, "genotype"]
                     lab = ctx.cfg["project"]["mutant_label"] if g == ctx.cfg["project"]["genotypes"]["mutant"] else g
-                    ax.text(xx.mean(), yy.mean(), f"{sub.loc[posname, 'animal_id']}\n{lab}", ha="center",
+                    ax.text(xx.mean(), yy.mean(), f"{posname}\n{sub.loc[posname, 'animal_id']}\n{lab}", ha="center",
                             va="center", fontsize=6.5, bbox=dict(facecolor="white", alpha=0.85, lw=0,
                                                                   boxstyle="round,pad=0.25"))
             ax.set_title(f"Slide {s}")
             figstyle.image_axes(ax)
             figstyle.scalebar(ax, um)
         figstyle.title(fig, f"{figstyle.mode_name(mode)}: section assignment on every slide",
-                       "Blue, Top section; vermillion, Bottom section")
+                       "Blue, Control; vermillion, CLN3 KO (genotype from the sample sheet)")
         S.fig(fig, "sections_all.png", caption=(
             "Tissue sections found on each slide and their assignment to the sample sheet's Top and Bottom "
-            "positions (blue, Top; vermillion, Bottom; grey, bare glass). Labels give the animal ID and genotype "
-            "taken from the sample sheet. Scale bar, 1 mm."))
+            "positions, coloured by the genotype the sheet gives each position (blue, Control; vermillion, CLN3 KO; "
+            "grey, bare glass). Labels give the position, animal ID and genotype. On the female slides (E, F, G) "
+            "the Control is the Top section; on the male slides (I, J, K) the CLN3 KO is. Scale bar, 1 mm."))
 
         fig, ax = plt.subplots(figsize=(6, 3.2))
         for s in slides:
@@ -126,12 +130,17 @@ def main():
             "annotation tolerance."))
 
         fig, axes = plt.subplots(len(slides), 1, figsize=(10, 1.1 * len(slides) + 0.6), sharex=True, squeeze=False)
+        gcol = figstyle.genotype_colors(ctx)
+        glab = {ctx.cfg["project"]["genotypes"]["control"]: "Control",
+                ctx.cfg["project"]["genotypes"]["mutant"]: ctx.cfg["project"]["mutant_label"]}
         for ax, s in zip(axes[:, 0], slides):
             z = np.load(ctx.out("processed", mode, "qc", f"meanspec_{s}.npz", mkdir=False))
-            for g, col in (("Top", figstyle.TOP), ("Bottom", figstyle.BOTTOM)):
+            geno = sheet[sheet.slide == s].set_index("position_on_slide")["genotype"]
+            for g in ("Top", "Bottom"):
                 if g in z:
                     sp = z[g] / max(z[g].sum(), 1e-12)     # TIC-scaled so slides are comparable
-                    ax.plot(*decimate(z["axis"], sp), lw=0.5, color=col, label=f"{g} section", alpha=0.85)
+                    ax.plot(*decimate(z["axis"], sp), lw=0.5, color=gcol.get(geno.get(g), figstyle.GREY),
+                            label=glab.get(geno.get(g), g) if ax is axes[0, 0] else None, alpha=0.85)
             ax.set_ylabel(f"Slide {s}", rotation=0, labelpad=22, va="center")
             ax.set_yticks([])
             ax.spines["left"].set_visible(False)
@@ -139,13 +148,13 @@ def main():
         axes[-1, 0].set_xlabel("m/z")
         figstyle.title(fig, f"{figstyle.mode_name(mode)}: mean spectra per slide")
         S.fig(fig, "mean_spectra_all.png", caption=(
-            "Mean tissue spectrum of the Top (blue) and Bottom (vermillion) section of each slide, each scaled to "
-            "a total of 1 so slides are comparable. Max-pooled for display."))
+            "Mean tissue spectrum of the Control (blue) and CLN3 KO (vermillion) section of each slide, each scaled "
+            "to a total of 1 so slides are comparable. Max-pooled for display."))
 
         fig, axes = plt.subplots(1, 2, figsize=(9, 3.2), gridspec_kw={"wspace": 0.35})
         secs["label"] = secs["slide"] + " " + secs["position"].str[0]
         axes[0].bar(secs["label"], secs["median_tic"],
-                    color=[figstyle.TOP if p == "Top" else figstyle.BOTTOM for p in secs["position"]])
+                    color=[gcol.get(g, figstyle.GREY) for g in secs["genotype"]])
         axes[0].set_title("Median TIC per section")
         axes[0].set_ylabel("Median total ion current (a.u.)")
         axes[0].set_xlabel("Section (slide, T = Top, B = Bottom)")
@@ -164,11 +173,12 @@ def main():
         figstyle.panel_labels(axes, x=-0.16)
         figstyle.title(fig, f"{figstyle.mode_name(mode)}: signal level and position trend")
         S.fig(fig, "gradient_all.png", caption=(
-            "(A) Median total ion current of each section (blue, Top = Control; vermillion, Bottom = CLN3 KO). "
-            "(B) Technical trend between the two section positions on each slide, from a linear fit of the "
-            "off-tissue matrix (DAN) signal and off-tissue TIC along the slide, expressed as the log2 ratio it "
-            "predicts between the Bottom and the Top section. Because genotype and position coincide, a hit "
-            "smaller than about twice this trend is flagged as possibly positional."))
+            "(A) Median total ion current of each section (blue, Control; vermillion, CLN3 KO; T = Top, "
+            "B = Bottom). (B) Technical trend between the two section positions on each slide, from a linear fit "
+            "of the off-tissue matrix (DAN) signal and off-tissue TIC along the slide, expressed as the log2 ratio "
+            "it predicts between the Bottom and the Top section. Within a slide genotype and position coincide "
+            "(Control on Top on the female slides, CLN3 KO on Top on the male slides), so a hit smaller than about "
+            "twice this trend is flagged as possibly positional."))
 
         # ---- summary --------------------------------------------------------------------
         S.h("Slides")
@@ -197,7 +207,10 @@ def main():
         S.p("Per-slide offsets (ppm), applied in 04 when peaks.recalibrate_per_slide is true: "
             + ", ".join(f"{k} {v:+.2f}" for k, v in ma["per_slide_offset_ppm"].items()))
         S.h("Top-to-bottom gradient (position confound)")
-        S.p("Control is always on top, so a technical trend down the slide looks like a genotype effect. "
+        S.p("Within each slide genotype and position coincide (female slides: Control on Top; male slides: "
+            "CLN3 KO on Top), so a technical trend down the slide looks like a genotype effect on that slide. "
+            "Because the direction is opposite in the two sexes, such a trend partly cancels in the pooled test but "
+            "inflates any female-versus-male difference in the genotype effect. "
             "Numbers are log2(Bottom/Top) predicted from the off-tissue trend; 0.1 means ~7%.")
         show = [c for c in grad.columns if c.endswith(("pred_log2_bottom_vs_top", "spearman"))] + ["n_off_pixels"]
         S.table(grad[["slide"] + show])
