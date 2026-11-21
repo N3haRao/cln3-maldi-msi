@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RUN ON THE MAC. Runs the MS/MS check of the raw .d folders on the cluster as one SLURM job.
 #   bash bin/hpc/run_msms_check.sh                # uses the main run's annotations (outputs/)
-#   RUN=flipJ bash bin/hpc/run_msms_check.sh       # uses outputs_flipJ (same annotations, own copy)
+#   RUN=test2 bash bin/hpc/run_msms_check.sh       # uses outputs_test2 (same annotations, own copy)
 #   INSTALL_BRUKER_LIB=0 bash bin/hpc/run_msms_check.sh   # metadata only, no fragment spectra
 # Steps: uploads the code, installs Bruker's reader library (opentims_bruker_bridge, a pip
 # package with Bruker's libtimsdata.so; first time only, on the login node because it needs
