@@ -259,6 +259,11 @@ def _figures(S, r, slide, tic, matrix_sum, nonmatrix, seg, animal_of, geno_of, a
              widths, res, rows_spec, pos_spec, ctx):
     mut, ctl = ctx.cfg["project"]["mutant_label"], ctx.cfg["project"]["control_label"]
     label = {ctx.cfg["project"]["genotypes"]["mutant"]: mut, ctx.cfg["project"]["genotypes"]["control"]: ctl}
+    gcol = figstyle.genotype_colors(ctx)
+    # colour of each position on THIS slide = colour of the genotype the sample sheet puts there
+    pos_col = {POSITION_NAME[c]: gcol.get(geno_of[c], figstyle.GREY) for c in (TOP, BOTTOM)}
+    pos_lab = {POSITION_NAME[c]: f"{POSITION_NAME[c]} section ({label.get(geno_of[c], geno_of[c])}, {animal_of[c]})"
+               for c in (TOP, BOTTOM)}
 
     um = float(ctx.get("acquisition.pixel_size_um", 50))
 
@@ -278,13 +283,13 @@ def _figures(S, r, slide, tic, matrix_sum, nonmatrix, seg, animal_of, geno_of, a
         "the known 1,5-diaminonaphthalene (DAN) matrix ions, the signal used to find tissue. (C) Summed DAN matrix "
         "ions; bare glass is bright, tissue is darker. All panels log(1 + intensity). Scale bar, 1 mm."))
 
-    # labelled sections: THE figure to check Top = Control, Bottom = Mutant
+    # labelled sections: THE figure to check that each section carries the right animal
     h, w = seg["positions"].shape
     fig, ax = plt.subplots(figsize=(min(9, 5.5 * w / h), 5.2) if w > h else (4.5, 5.5))
     show = np.ma.masked_equal(seg["positions"].astype(float), 0)
     ax.imshow(np.log1p(r.to_image(nonmatrix)), cmap="Greys_r", interpolation="nearest")
     from matplotlib.colors import ListedColormap
-    ax.imshow(show, cmap=ListedColormap([figstyle.TOP, figstyle.BOTTOM]), alpha=0.4, vmin=1, vmax=2,
+    ax.imshow(show, cmap=ListedColormap([pos_col["Top"], pos_col["Bottom"]]), alpha=0.4, vmin=1, vmax=2,
               interpolation="nearest")
     for code in (TOP, BOTTOM):
         yy, xx = np.nonzero(seg["positions"] == code)
@@ -297,27 +302,28 @@ def _figures(S, r, slide, tic, matrix_sum, nonmatrix, seg, animal_of, geno_of, a
     figstyle.title(fig, f"Slide {slide}: section assignment", f"Split found by: {seg['how']}")
     S.fig(fig, f"sections_{slide}.png", caption=(
         f"Assignment of the two tissue sections on slide {slide} to animals. Greyscale: non-matrix ion current. "
-        f"Blue overlay, the section matched to the sample sheet's Top position; vermillion, Bottom. The image is "
-        "shown as stored in the imzML file (row 0 at the top, column 0 on the left). Labels give position, animal "
-        "ID and genotype; check them against the slide layout before trusting any statistics. Scale bar, 1 mm."))
+        "Overlay colour gives the genotype the sample sheet assigns to each section (blue, Control; vermillion, "
+        "CLN3 KO). The image is shown as stored in the imzML file (row 0 at the top, column 0 on the left). Labels "
+        "give the sample sheet position (Top or Bottom), animal ID and genotype; check them against the slide "
+        "layout before trusting any statistics. Scale bar, 1 mm."))
 
     # mean spectra
     fig, ax = plt.subplots(figsize=(10, 3.2))
-    colors = {"Top": figstyle.TOP, "Bottom": figstyle.BOTTOM, "off": figstyle.GREY}
-    names = {"Top": "Top section", "Bottom": "Bottom section", "off": "Off tissue"}
+    colors = {**pos_col, "off": figstyle.GREY}
+    names = {**pos_lab, "off": "Off tissue"}
     for g, sp in means.items():
         ax.plot(*decimate(axis, sp), lw=0.5, color=colors[g], label=names.get(g, g), alpha=0.85)
     for i, (_, c) in enumerate(cal_df.drop_duplicates("name").iterrows()):
-        ax.axvline(c.theoretical_mz, color=figstyle.OKABE_ITO[2], lw=0.5, ls=":", label="Calibrant ions" if i == 0 else None)
+        ax.axvline(c.theoretical_mz, color="k", lw=0.5, ls=":", label="Calibrant ions" if i == 0 else None)
     for i, (_, m) in enumerate(mx_df.iterrows()):
         ax.axvline(m.theoretical_mz, color=figstyle.OKABE_ITO[3], lw=0.5, ls="--", label="DAN matrix ions" if i == 0 else None)
     ax.set_xlabel("m/z"); ax.set_ylabel("Mean intensity (a.u.)")  # noqa: E702
     ax.legend(loc="upper right", ncol=2)
     figstyle.title(fig, f"Slide {slide}: mean spectra")
     S.fig(fig, f"mean_spectrum_{slide}.png", caption=(
-        f"Mean spectrum of the Top section, the Bottom section and the off-tissue pixels of slide {slide}. "
-        "Dotted green lines mark the calibrant ions used to measure mass accuracy, dashed purple lines the "
-        "DAN matrix ions. Spectra are max-pooled for display only."))
+        f"Mean spectrum of each tissue section (blue, Control; vermillion, CLN3 KO; the legend gives its position "
+        f"and animal) and of the off-tissue pixels of slide {slide}. Dotted black lines mark the calibrant ions used "
+        "to measure mass accuracy, dashed purple lines the DAN matrix ions. Spectra are max-pooled for display only."))
 
     if len(cal_df):
         fig, ax = plt.subplots(figsize=(6.5, 3.2))
@@ -367,7 +373,7 @@ def _figures(S, r, slide, tic, matrix_sum, nonmatrix, seg, animal_of, geno_of, a
     S.fig(fig, f"y_profile_{slide}.png", caption=(
         f"Median signal in bins along the axis that separates the two sections of slide {slide}. A slope in the "
         "off-tissue DAN signal means a technical trend (matrix coating or instrument drift) that would look like a "
-        "genotype difference, because Control is always on the Top and CLN3 KO on the Bottom."))
+        "genotype difference on this slide, because the two genotypes sit at the two ends of this axis."))
 
 
 def suggest_tolerance(ppm_errors: np.ndarray, floor: float) -> dict:
