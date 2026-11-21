@@ -24,7 +24,9 @@ MUTANT = "#D55E00"
 GREY = "#7F7F7F"
 # region outlines on a greyscale image (bright, colour-blind safe, no black)
 REGION_COLORS = ["#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#D55E00", "#F0E442", "#0072B2"]
-TOP, BOTTOM = CONTROL, MUTANT          # sections: Top = Control, Bottom = Mutant in the sample sheet
+# slide positions. Deliberately NOT the genotype colours: the genotype on each position differs
+# between slides (females: Control on Top; males: CLN3 KO on Top, see the sample sheet).
+TOP, BOTTOM = "#E69F00", "#56B4E9"     # orange = Top section, sky blue = Bottom section
 
 MODE_NAME = {"lip_neg": "Lipids, negative ion mode", "lip_pos": "Lipids, positive ion mode",
              "met_neg": "Metabolites, negative ion mode"}
@@ -88,6 +90,14 @@ def genotype_colors(ctx) -> dict:
 def short_genotype(ctx, value) -> str:
     g = ctx.cfg["project"]["genotypes"]
     return "KO" if value == g["mutant"] else "Control" if value == g["control"] else str(value)
+
+
+def section_genotype_colors(ctx, sheet, slide: str) -> dict:
+    """{"Top": colour, "Bottom": colour} for one slide, from the genotype the sample sheet puts on each
+    position (Control blue, KO vermillion). Use this, not TOP/BOTTOM, when a figure shows genotype."""
+    gc = genotype_colors(ctx)
+    sub = sheet[sheet.slide == slide].set_index("position_on_slide")["genotype"]
+    return {pos: gc.get(sub.get(pos), GREY) for pos in ("Top", "Bottom")}
 
 
 def title(fig, text: str, subtitle: str | None = None, y: float | None = None) -> None:
