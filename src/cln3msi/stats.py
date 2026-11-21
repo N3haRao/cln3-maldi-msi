@@ -17,7 +17,8 @@ as pairs (each slide = one Control + one Mutant).
   sex difference (exploratory)   Welch t-test of the female vs male pair differences, i.e. the
                                  sex x genotype interaction. Sex itself cancels in the paired
                                  difference (both animals on a slide are the same sex). Sex is
-                                 confounded with run here, so this is labelled exploratory.
+                                 confounded with run and with slide orientation (females:
+                                 Control on Top; males: KO on Top), so this is exploratory.
   moderated t (empirical Bayes)  the paired t-test with each feature's variance shrunk towards a
                                  common prior estimated from all features (limma's method).
                                  Much more stable with 5 degrees of freedom per feature; used
