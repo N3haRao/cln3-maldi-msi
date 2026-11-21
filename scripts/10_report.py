@@ -138,20 +138,24 @@ def top_hits_images(ctx, mode: str, R: pd.DataFrame, S: Summary, n: int, log) ->
                    "Normalized intensity; Control and CLN3 KO section of each slide side by side, one colour scale per row")
     S.fig(fig, "top_hits_images.png", dpi=200, caption=(
         f"Ion images of the {len(hits)} strongest differential ions ({figstyle.mode_name(mode).lower()}), hypothesis "
-        "classes first. Each row is one ion; columns show the Control (top section) and CLN3 KO (bottom section) "
-        "of each slide, which share a colour scale (0 to the 99.5th percentile of all pixels, TIC-normalized). "
+        "classes first. Each row is one ion; columns show the Control and CLN3 KO section of each slide, "
+        "which share a colour scale (0 to the 99.5th percentile of all pixels, TIC-normalized). "
         "Row labels give the region where the ion was most significant and its log2 fold change (KO / Control, "
         "mean of per-slide differences of per-animal means). Scale bar, 1 mm."))
     return ctx.output_root / S.figures[-1][0]
 
 
 CAVEATS = [
-    "<b>Genotype is confounded with position.</b> Control is always the top section and the Mutant always "
-    "the bottom one. A technical top-to-bottom trend (matrix coating, instrument drift during the run) looks "
-    "exactly like a genotype effect. We measured the trend in the off-tissue DAN signal (phase 03) and flag "
-    "hits not clearly larger than it (<code>could_be_position</code>), but we cannot correct for it.",
-    "<b>Sex is confounded with run.</b> All females were run in runs 1-3 and all males in run 4. Any sex "
-    "comparison is exploratory only.",
+    "<b>Within a slide, genotype is confounded with position.</b> On the female slides (E, F, G) the Control "
+    "is the top section; on the male slides (I, J, K) the CLN3 KO is (the core mounted the male sections in "
+    "animal-number order; the sample sheet records the actual layout). A technical top-to-bottom trend (matrix "
+    "coating, instrument drift) looks like a genotype effect on each slide. Because its direction is opposite "
+    "in the two sexes it partly cancels in the pooled paired test. We measured the trend in the off-tissue DAN "
+    "signal (phase 03) and flag hits not clearly larger than it (<code>could_be_position</code>), but we cannot "
+    "correct for it.",
+    "<b>Sex is confounded with run and with slide orientation.</b> All females were run in runs 1-3 and all "
+    "males in run 4, and the genotype order on the slide differs by sex. Any sex comparison (e.g. "
+    "<code>log2fc_Female</code> vs <code>log2fc_Male</code>) is exploratory only.",
     "<b>n = 6 pairs.</b> The animal is the unit (one section per animal); tests use per-animal means, paired by "
     "slide. With 6 pairs, power is limited and the Wilcoxon test can never reach p below 0.031.",
     "<b>Annotations are MS1 only, at sum-composition level.</b> No LC-MS/MS reference. Isobaric and isomeric "
@@ -221,9 +225,10 @@ def slide_check_box(ctx, modes) -> str:
             f"{html.escape(str(s))} ({n} of {len(rows)} modes)" for s, n in n_modes.items()) +
             ".</b> Their KO/Control difference is the mirror image of the other slides, which is what a swap "
             "of the two sections (sample sheet, or slide loaded the other way round) would look like. Results "
-            "below use the sample sheet as it is. Check the sectioning/mounting records; only if they confirm "
-            "the swap, list the slide in <code>qc.sections.flip_slides</code> and rerun from 03. The class-test "
-            "CSVs have exploratory columns with the slide left out and flipped.</div>")
+            "below use the sample sheet as it is. Check the sectioning/mounting records; if they confirm the "
+            "swap, correct <code>position_on_slide</code> in the sample sheet and rerun from 02 (or, for a quick "
+            "test, list the slide in <code>qc.sections.flip_slides</code>). The class-test CSVs have exploratory "
+            "columns with the slide left out and flipped.</div>")
     else:
         warn = "<p>No slide flagged.</p>"
     return head + f"<p class='small'>{txt}</p>" + warn + table_html(T, 40)
