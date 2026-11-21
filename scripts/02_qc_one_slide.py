@@ -47,8 +47,10 @@ def main():
           "off-tissue pixels": res["n_off_tissue"]})
     S.h("Sections")
     S.p(f"Split: {res['section_split']} (split_axis = {res['split_axis']}). Check `sections_{slide}.png`: "
-        "the Control animal must carry the 'Top' label. If Control and KO are swapped, set "
-        "qc.sections.top_is_low_index: false (all slides) or list the slide in flip_slides.")
+        "each section must carry the animal the sample sheet places at that position (Top or Bottom). If the "
+        "sheet's layout is wrong, correct position_on_slide in the sheet. If the sheet is right but the image's "
+        "Top/Bottom detection is reversed, set qc.sections.top_is_low_index: false (all slides) or list the "
+        "slide in flip_slides.")
     import pandas as pd
     S.table(pd.DataFrame(res["sections"]))
 
