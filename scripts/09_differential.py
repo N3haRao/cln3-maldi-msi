@@ -20,10 +20,13 @@ FDR (Benjamini-Hochberg) families, within each mode and unit:
                are tested and reported but get no q_all
 Every result also gets large_effect = |log2FC| >= differential.large_effect_log2fc.
 
-Position flag: Control is always on top. From 03 we know, per slide, how much brighter the
-bottom of the slide was than the top in the off-tissue DAN signal. If a hit's log2FC has
-the same sign and is less than qc.gradient.flag_ratio times that, it's flagged
-"could_be_position". It's a warning, not a correction.
+Position flag: within a slide genotype and position coincide (female slides: Control on
+Top; male slides: CLN3 KO on Top, from the sample sheet). From 03 we know, per slide, how
+much brighter the bottom of the slide was than the top in the off-tissue DAN signal. That
+is turned into a predicted log2(Mutant/Control) per slide (sign from where the Mutant sits)
+and averaged over slides, like the log2FC itself. If a hit's log2FC has the same sign and is
+less than qc.gradient.flag_ratio times that, it's flagged "could_be_position". It's a
+warning, not a correction.
 
 Then, from the same per-animal means (see src/cln3msi/classes.py):
   class tests        totals per lipid class and within-animal ratios (config class_tests),
@@ -56,7 +59,9 @@ from cln3msi.report import Summary, plt  # noqa: E402
 
 
 def gradient_prediction(ctx, mode: str, obs: pd.DataFrame, mutant: str) -> tuple[float, pd.Series]:
-    """Median over slides of the predicted log2(Mutant/Control) from the off-tissue trend."""
+    """Mean over slides of the predicted log2(Mutant/Control) from the off-tissue trend (the mean,
+    because log2fc is the mean of the per-slide differences). The sign of each slide's prediction
+    follows the sample sheet: + if the Mutant is the Bottom section, - if it is the Top one."""
     p = ctx.output_root / "results" / "03_qc_all" / mode / "gradient.csv"
     if not p.exists():
         return np.nan, pd.Series(dtype=float)
@@ -67,7 +72,7 @@ def gradient_prediction(ctx, mode: str, obs: pd.DataFrame, mutant: str) -> tuple
     mut_pos = obs[obs.genotype == mutant].drop_duplicates("slide").set_index("slide")["section"]
     sign = pd.Series({s: (1.0 if mut_pos.get(s) == "Bottom" else -1.0) for s in g.index})
     pred = g[col] * sign
-    return float(pred.median()), pred
+    return float(pred.mean()), pred
 
 
 SLIDE_COLOURS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000", "#F0E442"]
@@ -597,7 +602,8 @@ def main():
         pairs = R["pairs"].iloc[0]
         S.p(f"Pairs (slides): {pairs}. Unit = animal; mean of TIC-normalized intensity over the region's "
             "non-edge pixels, log2, Mutant minus Control within slide.")
-        S.p(f"Position gradient: median predicted log2(Mutant/Control) from the off-tissue DAN trend = "
+        S.p(f"Position gradient: mean over slides of the predicted log2(Mutant/Control) from the off-tissue "
+            "DAN trend (sign per slide from where the Mutant sits) = "
             f"{g_med:.3f}" + ("" if np.isfinite(g_med) else " (not available)") +
             f". Hits with the same sign and |log2FC| < {flag_ratio:g}x that are flagged `could_be_position`.")
         # effect and interval first; Wilcoxon/sign stay in the CSV (their 0.031 floor makes them
@@ -638,8 +644,10 @@ def main():
         if "p_sex_difference_exploratory" in R:
             S.h("Sex (exploratory only)")
             S.p("Females were run in runs 1-3, all males in run 4, so sex and run are completely confounded. "
-                "`p_sex_difference_exploratory` compares the per-slide log2FC of 3 female vs 3 male pairs; "
-                "treat it as a hint for follow-up, not a result.")
+                "Sex is also confounded with slide orientation: on the female slides the Control is the Top "
+                "section, on the male slides the CLN3 KO is, so a technical top-to-bottom trend would add to the "
+                "female-versus-male difference. `p_sex_difference_exploratory` compares the per-slide log2FC of "
+                "3 female vs 3 male pairs; treat it as a hint for follow-up, not a result.")
             Sx = R[R.unit == "whole_section"].nsmallest(10, "p_sex_difference_exploratory")
             S.table(Sx[[c for c in ("label", "log2fc", "log2fc_Female", "log2fc_Male",
                                      "p_sex_difference_exploratory") if c in Sx]].round(4))
