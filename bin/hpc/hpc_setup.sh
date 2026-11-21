@@ -22,7 +22,7 @@ elif [[ ! -r "$CLN3_DATA/imzML files for biostats" ]]; then
 fi
 ENV_PREFIX="$HPC_WORK/envs/cln3-msi"
 RUN="${RUN:-}"
-HPC_CONFIG="config.hpc${RUN:+.$RUN}.yaml"          # RUN=flipJ -> config.hpc.flipJ.yaml
+HPC_CONFIG="config.hpc${RUN:+.$RUN}.yaml"          # RUN=test2 -> config.hpc.test2.yaml
 cd "$REPO"
 
 # ---- 1. conda ---------------------------------------------------------------------------
