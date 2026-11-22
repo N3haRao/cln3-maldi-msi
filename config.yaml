@@ -399,6 +399,16 @@ class_tests:
     lip_pos: ["HexCer", "HexCer / PC", "SM", "LPC / PC"]
     met_neg: ["GPI", "GPG", "GPE", "GPI / LPI"]
 
+# Design checks (phase 09c), asked for at the 11/2026 meeting. From 09's per-animal means:
+# females only and males only (paired, 3 pairs each), all pairs with sex as a covariate
+# (genotype effect averaged over sexes + the sex x genotype difference), unpaired (Welch,
+# ignoring the slide), unpaired with sex as a covariate, and a PCA of the animals' profiles
+# per region (all animals, slide mean removed, each sex alone). Sensitivity analyses: 09's
+# paired test over all 6 pairs stays the main result.
+design_checks:
+  enabled: true
+  pca_units: [whole_section, white_matter, cortex]
+
 # Lipizones (phase 09b): pixels grouped by their whole lipid profile, as in the Lipid Brain
 # Atlas, without genotype labels; then per-animal tests inside each lipizone (never per pixel).
 # Levels nest: each of the finest lipizones sits inside one lipizone of every coarser level.
