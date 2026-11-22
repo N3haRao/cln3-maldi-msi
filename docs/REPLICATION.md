@@ -215,6 +215,7 @@ download of LIPID MAPS or HMDB at a later date may differ slightly.
 | `annotation.*`, `hypotheses` | 05 |
 | `normalization.*` | 06 |
 | `registration.*` (including the list of atlas regions) | 07 |
+| `design_checks.*` (sex-split, unpaired, PCA) | 09c |
 | `explore.*` (Moran's I, NMF, territories) | 08 |
 | `differential.*`, `class_tests.*`, `pair_check.*` | 09 |
 | `lipizones.*` | 09b |
