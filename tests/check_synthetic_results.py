@@ -152,6 +152,24 @@ def main():
                if len(h) and len(r) else "no white-matter lipizone at k4")
     check("09b white-matter lipizone: HexCer up, sulfatide/HexCer down (planted)", ok, det)
 
+    # 09c: the planted Cer increase is found in each sex alone and without pairing; no sex x genotype
+    d9c = R / "09c_design" / "lip_neg" / "peak_tests.csv"
+    ok, det = False, "missing"
+    if d9c.exists():
+        T = pd.read_csv(d9c)
+        c = T[(T.unit == "whole_section") & T.label.fillna("").str.startswith("Cer 42:2;O2")]
+        if len(c):
+            r = c.iloc[0]
+            ok = (r.log2fc_paired_female > 0.5 and r.log2fc_paired_male > 0.5 and r.q_paired_female < 0.05
+                  and r.q_paired_male < 0.05 and r.q_unpaired < 0.05 and r.p_sex_x_genotype > 0.05)
+            det = (f"F {r.log2fc_paired_female:+.2f}, M {r.log2fc_paired_male:+.2f}, "
+                   f"unpaired q {r.q_unpaired:.1e}, sex x genotype p {r.p_sex_x_genotype:.2f}")
+    check("09c Cer up in females, males and unpaired; no sex x genotype (planted equal in both sexes)", ok, det)
+    pv = R / "09c_design" / "lip_neg" / "pca_variance.csv"
+    ok = pv.exists() and (lambda V: float(V[(V.unit == "whole_section") & (V.view == "All animals") & (V.pc == 1)]
+                                        ["r2_genotype"].iloc[0]) > 0.8)(pd.read_csv(pv)) if pv.exists() else False
+    check("09c PCA: whole-section PC1 is genotype (planted)", ok)
+
     # provenance: every phase recorded, all with the same code and config
     from cln3msi import provenance
     recs = [r for r in provenance.read_all(ctx) if r.get("phase") != "10_report"]
