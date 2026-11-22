@@ -2,15 +2,17 @@
 # RUNS ON THE CLUSTER (start_on_hpc.sh calls it). Submits the pipeline as a chain of SLURM jobs:
 #
 #   01 inventory ─┬─ 02 QC slide E
-#                 ├─ lip_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┐
-#                 ├─ lip_pos: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┼─ 10 report
-#                 └─ met_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┘
+#                 ├─ lip_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┐
+#                 ├─ lip_pos: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┼─ 10 report
+#                 └─ met_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┘
 #   (09b = lipizones; it does nothing for a mode not in lipizones.modes)
+#   (09c = design checks: sexes separately, sex-adjusted, unpaired, PCA)
 #
 # Each job starts only if the one before it finished OK (afterok), so a failure stops its
 # own chain and the report, and leaves the other modes running.
 #   FROM=05 bash bin/hpc/submit_all.sh    # skip 01-04 (their outputs are reused)
-#   FROM=09b bash bin/hpc/submit_all.sh   # only lipizones + report (needs 09 outputs)
+#   FROM=09b bash bin/hpc/submit_all.sh   # only lipizones, design checks + report (needs 09 outputs)
+#   FROM=09c bash bin/hpc/submit_all.sh   # only the design checks + report
 #   RUN=test2 bash bin/hpc/submit_all.sh  # a sensitivity run with config.hpc.test2.yaml in outputs_test2;
 #                                         # adds phase 11 (compare with the main outputs) after 10
 #   COMPARE_WITH=outputs_test2 bash bin/hpc/submit_all.sh
@@ -38,8 +40,8 @@ COMMON=(--parsable --export=ALL)
 
 # time limit per phase (edit if a job gets killed for running out of time)
 declare -A TIME=([01]=01:00:00 [02]=01:00:00 [03]=08:00:00 [04]=06:00:00 [05]=00:30:00
-                 [06]=01:00:00 [07]=06:00:00 [08]=02:00:00 [09]=02:00:00 [09b]=02:00:00 [10]=00:30:00 [11]=00:30:00)
-ORDER=(03 04 05 06 07 08 09 09b)
+                 [06]=01:00:00 [07]=06:00:00 [08]=02:00:00 [09]=02:00:00 [09b]=02:00:00 [09c]=00:30:00 [10]=00:30:00 [11]=00:30:00)
+ORDER=(03 04 05 06 07 08 09 09b 09c)
 
 # phase string comparison: run phase P if P >= FROM
 want() { [[ "$1" > "$FROM" || "$1" == "$FROM" ]]; }
