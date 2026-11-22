@@ -120,9 +120,9 @@ This logs in and, on the login node:
 
 ```
 01 inventory ─┬─ 02 QC of one slide
-              ├─ lip_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┐
-              ├─ lip_pos: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┼─ 10 report
-              └─ met_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b ─┘
+              ├─ lip_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┐
+              ├─ lip_pos: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┼─ 10 report
+              └─ met_neg: 03 → 04 → 05 → 06 → 07 → 08 → 09 → 09b → 09c ─┘
 ```
 
 The jobs keep running after you close the Terminal. A full run takes a few hours, depending
@@ -185,7 +185,8 @@ FROM=05 bash bin/hpc/start_on_hpc.sh      # rerun from phase 05, reusing the out
 ```
 
 `FROM=03` reruns almost everything, `FROM=09` only the statistics and the report, `FROM=09b`
-only the lipizones and the report.
+only the lipizones, the design checks and the report, and `FROM=09c` only the design checks
+(each sex alone, sex as a covariate, unpaired, PCA) and the report.
 
 A change to the sample sheet (which animal is at Top/Bottom) needs a full rerun. To keep the
 old results, move them aside first (the reference cache stays where it is):
