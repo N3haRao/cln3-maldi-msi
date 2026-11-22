@@ -395,6 +395,29 @@ one BH family per level. Because a lipizone's own marker lipids decide which pix
 it, tests (2) and (3) partly condition on the outcome; they are reported as exploratory, and
 the atlas-region tests, whose regions come from anatomy alone, remain the main analysis.
 
+### 4.8 Design checks: sexes separately, sex as a covariate, unpaired, PCA (phase 09c)
+
+Requested as sensitivity analyses of the main paired test (4.3), from the same per-animal log2
+means, per atlas region, for single peaks and for the class totals and ratios:
+
+* **Each sex alone:** moderated paired t over the 3 female pairs (slides E, F, G) and over the 3
+  male pairs (I, J, K).
+* **Sex as a covariate (paired):** the 6 within-slide differences regressed on sex (coded ±½):
+  the intercept is the genotype effect averaged over the sexes, the slope the female-minus-male
+  difference (sex × genotype interaction). Sex itself cancels within a slide.
+* **Unpaired:** Welch t-test of the 6 knockout against the 6 control animals, ignoring the slide,
+  and a linear model log2 ~ genotype + sex over the 12 animals.
+
+BH within each analysis and region over the same peaks as 09 (untargeted family plus
+hypothesis-tagged peaks); class features one family per mode. **PCA** of the animals' profiles
+(feature-QC peaks, log2, z-scored) per region: all animals, after subtracting each slide's mean
+(what the paired test compares), and each sex alone; for every component the share of its
+variance explained by genotype, sex and slide (one-way R²).
+
+With 3 pairs per sex, power is very low, and the sex comparison is confounded with run and
+slide orientation (Sections 5.1 and 5.2). The unpaired tests keep the slide-to-slide noise
+that pairing removes. None of these replaces the paired test as the main result.
+
 ## 5. Quality checks for the design's weak points
 
 ### 5.1 Genotype and position: the gradient check
