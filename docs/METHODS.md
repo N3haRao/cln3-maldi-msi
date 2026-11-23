@@ -436,6 +436,15 @@ checked against the molecular signature, and only paired comparisons are reporte
 * **Four-quadrant comparison.** Female against male log2 fold change per lipid and region,
   classed as significant in both sexes in the same direction, in both but opposite, in one sex
   only, or in neither (q < 0.05 in each sex's own test; also shown at nominal p < 0.05).
+* **Region areas (females).** Each region's share of the section's pixels is compared between
+  the knockout and Control sections on each slide (white matter, cortex, hippocampus, thalamus,
+  and the rest of the section as "other"; these atlas regions do not overlap). Because the
+  whole-section mean is the area-weighted mean of the region means, the whole-section test is
+  repeated with each knockout section's region means weighted by the Control section's region
+  shares (log2 sum(s_Ctl m_KO) minus log2 sum(s_Ctl m_Ctl)). The part due to the area difference
+  alone (log2 sum(s_KO m_Ctl) minus log2 sum(s_Ctl m_Ctl)) is reported as well. If the hits
+  survive the adjustment, a difference in cutting level or tissue loss does not explain the
+  whole-section result.
 * **Male labels from the molecular signature.** PCA of the female Controls with the six male
   sections (lipid set, log2, z-scored), per region, labelled by slide and animal (for example
   K_418); and a signature score per male slide: the Spearman correlation between its
