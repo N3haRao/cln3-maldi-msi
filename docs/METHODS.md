@@ -418,6 +418,35 @@ With 3 pairs per sex, power is very low, and the sex comparison is confounded wi
 slide orientation (Sections 5.1 and 5.2). The unpaired tests keep the slide-to-slide noise
 that pairing removes. None of these replaces the paired test as the main result.
 
+### 4.9 Females alone, the male labels, and the lipid set (phase 09d)
+
+Decided on November 23, 2026: the female pairs are analysed on their own, the male labels are
+checked against the molecular signature, and only paired comparisons are reported.
+
+* **Lipid set.** The quality-controlled ions of the two lipid modes (4.4) that carry a shorthand
+  lipid name, one ion per lipid (the brighter one where a lipid passes in both modes or with two
+  adducts): 161 unique lipids in this data set.
+* **Females.** For each region, the three within-slide log2 differences (slides E, F, G) are
+  tested with the moderated paired t over the lipid set, BH within the region. Class totals and
+  ratios use the paired t, BH within each mode.
+* **Males.** The same tests for slides I, J and K under each candidate labelling: the sample
+  sheet as corrected from the records (I, J and K swapped) and the flipJ labelling (only J
+  swapped). Because per-animal means do not depend on labels, the second labelling is obtained
+  by exchanging the genotypes of I and K, with no rerun of the earlier phases.
+* **Four-quadrant comparison.** Female against male log2 fold change per lipid and region,
+  classed as significant in both sexes in the same direction, in both but opposite, in one sex
+  only, or in neither (q < 0.05 in each sex's own test; also shown at nominal p < 0.05).
+* **Male labels from the molecular signature.** PCA of the female Controls with the six male
+  sections (lipid set, log2, z-scored), per region, labelled by slide and animal (for example
+  K_418); and a signature score per male slide: the Spearman correlation between its
+  Top-minus-Bottom profile and the mean female knockout-minus-Control profile. The score is a
+  within-slide difference, so it is not affected by the male run being imaged separately.
+* **Annotation tables.** For the lipid set: counts per brain evidence tier (scored as in the
+  Lipid Brain Atlas: LC-MS/MS 8 points, LC-MS 2, each published brain data set 1; high > 4,
+  medium 2 to 4, low 1, database only 0, not covered when no atlas table covers the class), per
+  annotation source (class-rule composition with its formula found in LIPID MAPS; second-pass
+  LIPID MAPS or SwissLipids match; curated list) and per kind of atlas evidence.
+
 ## 5. Quality checks for the design's weak points
 
 ### 5.1 Genotype and position: the gradient check
