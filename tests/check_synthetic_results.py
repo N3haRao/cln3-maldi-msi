@@ -170,6 +170,24 @@ def main():
                                         ["r2_genotype"].iloc[0]) > 0.8)(pd.read_csv(pv)) if pv.exists() else False
     check("09c PCA: whole-section PC1 is genotype (planted)", ok)
 
+    # 09d: the female analysis finds the planted HexCer increase, and the male signature score
+    # recovers the sample-sheet labels (the synthetic data follow the sheet)
+    d9 = R / "09d_by_sex"
+    ok, det = False, "missing"
+    if (d9 / "lipid_tests.csv").exists():
+        T = pd.read_csv(d9 / "lipid_tests.csv")
+        h = T[(T.analysis == "female") & (T.unit == "whole_section") & (T.lipid == "HexCer 42:2;O2")]
+        ok = len(h) == 1 and bool(h.significant.iloc[0]) and h.log2fc.iloc[0] > 0.5
+        det = f"log2FC {h.log2fc.iloc[0]:+.2f}, q {h.q.iloc[0]:.1e}" if len(h) else "not in the lipid set"
+    check("09d females: planted HexCer 42:2;O2 increase found (3 pairs)", ok, det)
+    ok, det = False, "missing"
+    if (d9 / "male_signature_scores.csv").exists():
+        Sg = pd.read_csv(d9 / "male_signature_scores.csv")
+        w = Sg[Sg.unit == "whole_section"]
+        ok = len(w) == 3 and w.agrees_with_corrected.astype(bool).all() and not w.agrees_with_flipJ.astype(bool).all()
+        det = ", ".join(f"{r.slide} r={r.r_top_minus_bottom_vs_female_signature:+.2f}" for r in w.itertuples())
+    check("09d male signature recovers the sheet labels (corrected agrees, flipJ does not)", ok, det)
+
     # provenance: every phase recorded, all with the same code and config
     from cln3msi import provenance
     recs = [r for r in provenance.read_all(ctx) if r.get("phase") != "10_report"]
