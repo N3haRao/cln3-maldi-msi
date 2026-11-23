@@ -12,7 +12,8 @@
 # own chain and the report, and leaves the other modes running.
 #   FROM=05 bash bin/hpc/submit_all.sh    # skip 01-04 (their outputs are reused)
 #   FROM=09b bash bin/hpc/submit_all.sh   # only lipizones, design checks + report (needs 09 outputs)
-#   FROM=09c bash bin/hpc/submit_all.sh   # only the design checks + report
+#   FROM=09c bash bin/hpc/submit_all.sh   # only the design checks, by-sex analysis + report
+#   FROM=09d bash bin/hpc/submit_all.sh   # only the by-sex analysis (females, males, labels) + report
 #   RUN=test2 bash bin/hpc/submit_all.sh  # a sensitivity run with config.hpc.test2.yaml in outputs_test2;
 #                                         # adds phase 11 (compare with the main outputs) after 10
 #   COMPARE_WITH=outputs_test2 bash bin/hpc/submit_all.sh
@@ -40,7 +41,7 @@ COMMON=(--parsable --export=ALL)
 
 # time limit per phase (edit if a job gets killed for running out of time)
 declare -A TIME=([01]=01:00:00 [02]=01:00:00 [03]=08:00:00 [04]=06:00:00 [05]=00:30:00
-                 [06]=01:00:00 [07]=06:00:00 [08]=02:00:00 [09]=02:00:00 [09b]=02:00:00 [09c]=00:30:00 [10]=00:30:00 [11]=00:30:00)
+                 [06]=01:00:00 [07]=06:00:00 [08]=02:00:00 [09]=02:00:00 [09b]=02:00:00 [09c]=00:30:00 [09d]=00:30:00 [10]=00:30:00 [11]=00:30:00)
 ORDER=(03 04 05 06 07 08 09 09b 09c)
 
 # phase string comparison: run phase P if P >= FROM
@@ -87,6 +88,9 @@ for mode in $ORDERED_MODES; do
   [[ -n "$dep" ]] && last_ids+=("$dep")
 done
 deps=$(IFS=:; echo "${last_ids[*]:-}")
+if want 09d; then         # needs every mode's 09 outputs, so it runs once, after all chains
+  j=$(submit 09d "" "$deps"); echo "09d by sex            job $j"; deps=$j
+fi
 j=$(submit 10 "" "$deps"); echo "10 report             job $j"
 COMPARE_WITH="${COMPARE_WITH:-}"
 if [[ -n "$COMPARE_WITH" ]]; then
