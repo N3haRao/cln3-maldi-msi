@@ -76,7 +76,7 @@ reference/               lipid class rules, adducts, calibrants, curated metabol
                          lamanno2026/ = mouse-brain lipid evidence from the Lipid Brain Atlas (Nature 2026);
                          msms_diagnostic_fragments.csv = class fragments for the optional MS/MS check
 src/cln3msi/             the shared code the scripts import
-scripts/00_setup.py ... 11_compare_runs.py, 04b_scils_crosscheck.py, 09b_lipizones.py, 09c_design.py, make_synthetic_data.py
+scripts/00_setup.py ... 11_compare_runs.py, 04b_scils_crosscheck.py, 09b_lipizones.py, 09c_design.py, 09d_by_sex.py, make_synthetic_data.py
 scripts/tools/           build_lamanno_reference.py (rebuilds reference/lamanno2026 from the supplements),
                          inspect_bruker_d.py (optional, read-only MS/MS check of raw Bruker .d folders)
 notebooks/               review notebooks (they only read outputs, they never recompute)
@@ -206,6 +206,7 @@ If a download in 00 is blocked (LIPID MAPS sometimes wants a click-through), dow
 in the browser and point to it:
 
 | **09c_design** | sensitivity analyses from 09's per-animal means, per atlas region, single peaks and class totals/ratios: **females only and males only** (paired, 3 pairs each), all pairs with **sex as a covariate** (averaged genotype effect + sex x genotype difference), **unpaired** (Welch) and unpaired with sex; **PCA** of the animals' profiles (all, slide mean removed, each sex) with the variance share of genotype, sex and slide per PC | `results/09c_design/<mode>/{peak_tests,class_tests,counts,pca_variance,pca_scores}.csv`, `sex_and_pairing.png`, `pca.png` |
+| **09d_by_sex** | decided 11/23/2026: **females alone** (paired, 3 pairs) per region on the unique quality-controlled lipids (one ion per lipid), volcano plots and significant-lipid list; **males under each candidate labelling** (`by_sex.male_labelings`: corrected and flipJ); **four-quadrant** female vs male fold-change plots; **male labels from the molecular signature** (PCA of female Controls with the male sections, labelled slide_animal, plus a within-slide signature score); confidence-tier, annotation-source and Lipid Brain Atlas evidence tables for the lipid set | `results/09d_by_sex/{lipid_tests,female_significant,female_vs_male,male_signature_scores,class_tests,confidence_tiers,annotation_sources,atlas_evidence}.csv`, `by_sex_results.xlsx`, volcano, quadrant and PCA figures |
 ```bash
 python scripts/00_setup.py --config config.yaml \
   --lipidmaps-file "$HOME/Downloads/LMSD.sdf.zip" --hmdb-file "$HOME/Downloads/structures.zip"
@@ -277,7 +278,7 @@ Everything is driven from the Mac terminal by the scripts in `bin/hpc/`:
 | `upload_to_hpc.sh` | Mac | rsync the code + `imzML files for biostats` (~40 GB, resumable) |
 | `start_on_hpc.sh` | Mac | ssh in, run `hpc_setup.sh`, then `submit_all.sh` |
 | `hpc_setup.sh` | cluster login node | conda (module, existing install, or Miniforge), env, unit tests, phase 00 + downloads |
-| `submit_all.sh` | cluster login node | submits 01 → 02, and per mode 03 → 09b → 09c as dependent jobs, then 10 |
+| `submit_all.sh` | cluster login node | submits 01 → 02, and per mode 03 → 09b → 09c as dependent jobs, then 09d (once, all modes) and 10 |
 | `job_phase.sbatch` | compute node | one phase (4 cores, 32 GB by default) |
 | `status.sh` / `fetch_results.sh` | Mac | queue + progress / copy summaries, figures, report back |
 | `archive_outputs.sh` | Mac | move a finished run's outputs aside on the cluster (cache stays) before a full rerun |
