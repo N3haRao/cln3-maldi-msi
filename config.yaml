@@ -421,6 +421,10 @@ by_sex:
   male_labelings:
     corrected: []                        # the sample sheet as it is (I, J, K swapped by the records)
     flipJ: [I, K]                        # only J swapped: I and K back as originally recorded
+  # region-area check (females): regions that do not overlap (one atlas label per pixel); the
+  # rest of the section counts as "other". Corpus callosum is left out because it lies inside
+  # white matter.
+  composition_parts: [white_matter, cortex, hippocampus, thalamus]
   marker_features: [GPI, GPG]            # CLN3 markers shown next to the male signature scores
   key_features: [HexCer, "Sulfatide / PE+PI+PS", GM3, "Hex2Cer / HexCer", GPI, GPG]
 
