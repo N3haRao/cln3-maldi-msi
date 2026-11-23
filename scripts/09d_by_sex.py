@@ -30,6 +30,11 @@ What it does, from 09's per-animal means (nothing is recomputed from pixels):
                male slide, the Spearman correlation between its Top-minus-Bottom profile
                and the female knockout-minus-Control profile (positive: Top looks like the
                knockout), which is free of run and slide offsets.
+  areas        females: each region's share of the section's pixels, knockout vs Control on
+               each slide, and the whole-section test redone with each knockout section's
+               regions put back at the Control's proportions (by_sex.composition_parts, which
+               must not overlap). Tells whether a difference in how the sections were cut
+               could explain the whole-section result.
   annotation   for the lipid set: counts per confidence tier (Lipid Brain Atlas scoring),
                per annotation source (class rules checked against LIPID MAPS, LIPID MAPS or
                SwissLipids second pass, curated list) and per Lipid Brain Atlas evidence.
@@ -164,6 +169,114 @@ def test_pairs(D: pd.DataFrame, alpha: float) -> pd.DataFrame:
     for s in D.index:
         R[f"pair_{s}"] = D.loc[s]
     return R.rename_axis("lipid").reset_index()
+
+
+def composition_check(ctx, L, info, slides, ctl, mut, parts, min_px, alpha):
+    """Region areas and a region-adjusted whole-section test for the given (female) pairs.
+
+    The regions in `parts` must not overlap (atlas labels: one per pixel); the rest of the
+    section is "other". The whole-section mean of a lipid is then exactly the area-weighted
+    mean of the region means, so a knockout-vs-Control difference splits into two parts:
+      adjusted          log2 sum(s_Ctl * m_KO) - log2 sum(s_Ctl * m_Ctl)
+                        (the knockout's region means at the Control's region proportions)
+      composition only  log2 sum(s_KO * m_Ctl) - log2 sum(s_Ctl * m_Ctl)
+                        (what the area difference alone would do)
+    s = each region's share of the section's pixels, m = per-animal region means (09).
+    Returns (area table, per-pair area log2 ratios, lipid table, adjusted pair differences)."""
+    units = ["whole_section"] + list(parts)
+    means, npx = {}, {}
+    for m, g in L.groupby("mode"):
+        pm = pd.read_csv(ctx.output_root / "results" / "09_differential" / m / "per_animal_means.csv")
+        pm = pm[pm.unit.isin(units)]
+        npx[m] = pm.drop_duplicates(["unit", "animal_id"]).pivot(index="animal_id", columns="unit", values="n_pixels")
+        sub = pm[pm.peak.isin(g.peak)]
+        for u in units:
+            W = sub[sub.unit == u].pivot_table(index="animal_id", columns="peak", values="mean_norm_intensity")
+            means.setdefault(u, []).append(W.rename(columns=dict(zip(g.peak, g.lipid))))
+    means = {u: pd.concat(v, axis=1) for u, v in means.items()}
+    ref_mode = "lip_neg" if "lip_neg" in npx else sorted(npx)[0]
+    N = npx[ref_mode].reindex(columns=units)
+
+    area_rows, ratio_rows, obs_d, adj_d, comp_d = [], [], {}, {}, {}
+    for s in slides:
+        sub = info[info.slide == s]
+        k = sub.index[sub.genotype == mut]
+        c = sub.index[sub.genotype == ctl]
+        if not (len(k) and len(c)) or k[0] not in N.index or c[0] not in N.index:
+            continue
+        k, c = k[0], c[0]
+        rr = {"slide": s}
+        for a, gname in ((c, ctl), (k, mut)):
+            n = N.loc[a].fillna(0)
+            whole = n["whole_section"]
+            other = whole - n[list(parts)].sum()
+            row = {"slide": s, "section": info.loc[a, "short"], "genotype": gname,
+                   "position": info.loc[a, "position_on_slide"], "whole_section_pixels": int(whole)}
+            for u in parts:
+                row[f"{u}_pct"] = 100 * n[u] / whole if whole else np.nan
+            row["other_pct"] = 100 * other / whole if whole else np.nan
+            area_rows.append(row)
+        nk, nc = N.loc[k].fillna(0), N.loc[c].fillna(0)
+        rr["whole_section"] = np.log2(nk["whole_section"] / nc["whole_section"])
+        for u in parts:
+            sk, sc = nk[u] / nk["whole_section"], nc[u] / nc["whole_section"]
+            rr[u] = np.log2(sk / sc) if sk > 0 and sc > 0 else np.nan
+        ratio_rows.append(rr)
+
+        # region shares and means per animal, per lipid (each lipid with its own mode's pixel counts)
+        def parts_of(a):
+            S_, M_ = {}, {}
+            for m, g in L.groupby("mode"):
+                n = npx[m].reindex(columns=units).loc[a] if a in npx[m].index else pd.Series(np.nan, index=units)
+                whole = n["whole_section"]
+                mw = means["whole_section"].loc[a, g.lipid] if a in means["whole_section"].index else None
+                if mw is None or not whole > 0:
+                    continue
+                tot = mw * whole
+                used = 0.0
+                for u in parts:
+                    if a in means[u].index and n.get(u, 0) > 0 and means[u].loc[a, g.lipid].notna().all():
+                        S_.setdefault(u, {}).update(dict.fromkeys(g.lipid, n[u] / whole))
+                        M_.setdefault(u, {}).update(means[u].loc[a, g.lipid].to_dict())
+                        tot = tot - means[u].loc[a, g.lipid] * n[u]
+                        used += n[u]
+                rest = whole - used
+                if rest < -0.5:
+                    raise ValueError(f"regions {parts} overlap: they cover more pixels than the section of {a}")
+                if rest >= min_px:
+                    S_.setdefault("other", {}).update(dict.fromkeys(g.lipid, rest / whole))
+                    M_.setdefault("other", {}).update((tot / rest).clip(lower=0).to_dict())
+                else:   # nothing left outside the regions: fold the few remaining pixels into the shares
+                    for u in list(S_):
+                        S_[u].update({l: S_[u][l] * whole / max(used, 1) for l in g.lipid if l in S_[u]})
+            return (pd.DataFrame(S_).reindex(columns=list(parts) + ["other"]).fillna(0),
+                    pd.DataFrame(M_).reindex(columns=list(parts) + ["other"]).fillna(0))
+        sC, mC = parts_of(c)
+        sK, mK = parts_of(k)
+        lip = sC.index.intersection(sK.index)
+        if not len(lip):
+            continue
+        sC, mC, sK, mK = (x.loc[lip] for x in (sC, mC, sK, mK))
+        eps = 1e-12
+        base = (sC * mC).sum(axis=1).clip(lower=eps)
+        obs_d[s] = np.log2((sK * mK).sum(axis=1).clip(lower=eps)) - np.log2(base)
+        adj_d[s] = np.log2((sC * mK).sum(axis=1).clip(lower=eps)) - np.log2(base)
+        comp_d[s] = np.log2((sK * mC).sum(axis=1).clip(lower=eps)) - np.log2(base)
+    A = pd.DataFrame(area_rows)
+    RT = pd.DataFrame(ratio_rows)
+    if not adj_d:
+        return A, RT, pd.DataFrame(), pd.DataFrame()
+    Dobs, Dadj, Dcomp = (pd.DataFrame(d).T for d in (obs_d, adj_d, comp_d))
+    Ro, Ra = test_pairs(Dobs, alpha), test_pairs(Dadj, alpha)
+    T = Ro[["lipid", "log2fc", "p", "q", "significant"]].rename(columns={
+        "log2fc": "log2fc_observed", "p": "p_observed", "q": "q_observed", "significant": "significant_observed"})
+    T = T.merge(Ra[["lipid", "log2fc", "p", "q", "significant", "n_pairs_up"]].rename(columns={
+        "log2fc": "log2fc_adjusted", "p": "p_adjusted", "q": "q_adjusted", "significant": "significant_adjusted",
+        "n_pairs_up": "n_pairs_up_adjusted"}), on="lipid")
+    T["log2fc_composition_only"] = T["lipid"].map(Dcomp.mean())
+    for s in Dadj.index:
+        T[f"adjusted_pair_{s}"] = T["lipid"].map(Dadj.loc[s])
+    return A, RT, T, Dadj
 
 
 def category(fq, mq, fx, mx, alpha):
@@ -303,6 +416,84 @@ def main():
     show = sigF.copy()
     show["change"] = show["pct_change"].map(lambda v: f"{v:+.0f}%")
     S.table(show[["unit", "lipid", "lipid_class", "change", "p", "q", "n_pairs_up", "confidence_tier"]].round(4), max_rows=80)
+    # ---- region areas: does a difference in section make-up explain the whole-section result? ----
+    parts = [u for u in C.get("composition_parts", ["white_matter", "cortex", "hippocampus", "thalamus"]) if u in regions]
+    comp, A, RT = None, pd.DataFrame(), pd.DataFrame()
+    if "whole_section" in regions and parts:
+        S.h("Females: region areas and the region-adjusted whole section")
+        try:
+            A, RT, comp, _ = composition_check(ctx, L, info, fem, ctl, mut, parts,
+                                               int(ctx.cfg["differential"]["min_pixels_per_unit"]), alpha)
+        except ValueError as e:
+            S.warn(f"Region-area check skipped: {e}", log)
+            A = RT = pd.DataFrame()
+        if not A.empty:
+            A.round(2).to_csv(out("female_region_areas.csv"), index=False)
+            RT.to_csv(out("female_region_area_ratios.csv"), index=False)
+            S.p("The whole-section mean of a lipid is the area-weighted mean of its region means. If the knockout and "
+                "Control sections on a slide were cut at slightly different levels, or one lost tissue, the regions take up "
+                "different shares of the two sections and the whole-section means differ even when no region changes. "
+                f"Regions used (they do not overlap; the rest of the section is 'other'): "
+                + ", ".join(figstyle.region_name(u) for u in parts) + ". Share of each section's pixels:")
+            S.table(A.round(1), max_rows=20)
+            show_rt = RT.set_index("slide")
+            show_rt = (100 * (2 ** show_rt - 1)).round(0)
+            show_rt.loc["mean"] = (100 * (2 ** RT.set_index("slide").mean() - 1)).round(0)
+            S.p("Knockout share relative to the Control share on the same slide, in percent (whole_section: total "
+                "section size):")
+            S.table(show_rt.reset_index())
+        if comp is not None and not comp.empty:
+            comp.to_csv(out("female_whole_section_adjusted.csv"), index=False)
+            no, na = int(comp.significant_observed.sum()), int(comp.significant_adjusted.sum())
+            both = int((comp.significant_observed & comp.significant_adjusted).sum())
+            r = float(np.corrcoef(comp.log2fc_observed, comp.log2fc_adjusted)[0, 1])
+            share = float(np.nanmedian(np.abs(comp.log2fc_composition_only) / np.abs(comp.log2fc_observed).clip(lower=1e-6)))
+            S.p(f"Whole section, recomputed with each knockout section's regions put back at the Control's proportions: "
+                f"**{na}** lipids at q < {alpha:g} (observed: {no}; {both} in both). Correlation of the observed and "
+                f"adjusted fold changes across lipids: r = {r:.2f}. The area difference alone accounts for a median of "
+                f"{100 * share:.0f}% of the observed change per lipid.")
+            S.p("Reading it: if most hits survive and the area-only part is small, the whole-section result is not a "
+                "product of how the sections were cut. If many hits disappear, report the region results instead.")
+            fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.3), gridspec_kw={"wspace": 0.3})
+            ax = axes[0]
+            cat = np.where(comp.significant_observed & comp.significant_adjusted, "both",
+                           np.where(comp.significant_observed, "observed only",
+                                    np.where(comp.significant_adjusted, "adjusted only", "neither")))
+            for c_, col in (("neither", "#C8C8C8"), ("observed only", "#000000"), ("adjusted only", figstyle.CONTROL),
+                            ("both", MAG)):
+                m_ = cat == c_
+                ax.scatter(comp.log2fc_observed[m_], comp.log2fc_adjusted[m_], s=13, c=col, edgecolors="none",
+                           label=f"{c_} ({int(m_.sum())})")
+            lim = np.nanmax(np.abs(np.r_[comp.log2fc_observed, comp.log2fc_adjusted, 0.1])) * 1.08
+            ax.plot([-lim, lim], [-lim, lim], color="#999999", lw=0.5, ls=":")
+            ax.axhline(0, color="#999999", lw=0.5); ax.axvline(0, color="#999999", lw=0.5)  # noqa: E702
+            ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)  # noqa: E702
+            ax.set_xlabel("observed log2 FC, whole section"); ax.set_ylabel("region-adjusted log2 FC")  # noqa: E702
+            ax.set_title(f"Lipids significant at q < {alpha:g}")
+            ax.legend(fontsize=7, loc="best", frameon=True, framealpha=0.85, edgecolor="none")
+            ax = axes[1]
+            if not RT.empty:
+                cols_ = ["whole_section"] + parts
+                x = np.arange(len(cols_))
+                w = 0.8 / max(len(RT), 1)
+                greys = ["#000000", "#777777", "#BBBBBB", MAG, "#555555"]
+                for i, (_, rw) in enumerate(RT.iterrows()):
+                    ax.bar(x + i * w - 0.4 + w / 2, [100 * (2 ** rw[c_] - 1) for c_ in cols_], w,
+                           color=greys[i % len(greys)], label=f"slide {rw['slide']}")
+                ax.axhline(0, color="#999999", lw=0.5)
+                ax.set_xticks(x)
+                ax.set_xticklabels([figstyle.region_name(c_) if c_ != "whole_section" else "section size" for c_ in cols_],
+                                   rotation=30, ha="right", fontsize=8)
+                ax.set_ylabel("knockout vs Control share (%)")
+                ax.set_title("Region share of the section")
+                ax.legend(fontsize=7, frameon=False)
+            figstyle.title(fig, "Females: does section make-up explain the whole-section result?")
+            S.fig(fig, "female_region_areas.png", caption=(
+                "Left: each lipid's whole-section fold change as measured (x) and after putting each knockout section's "
+                "regions back at the Control's proportions (y); dotted line, no change. Colour: significant in both "
+                "(magenta), as measured only (black), adjusted only (blue), neither (grey). Right: knockout share of each "
+                "region relative to the Control on the same slide (0 = same share); 'section size' compares total pixels."))
+
     volcano_grid(F, regions, "Females: knockout vs Control by region", "volcano_female.png", S, alpha=alpha, caption=(
         f"Each point is one of the {len(L)} quality-controlled lipids in one region; x, mean of the three female "
         "within-slide log2 differences (knockout / Control); y, −log10 p of the moderated paired t. Vermillion, higher "
@@ -507,6 +698,8 @@ def main():
             for nm, df in [("female_significant", sigF[cols]), ("lipid_tests", RES), ("female_vs_male", Q),
                            ("quadrant_counts_q", QC.reset_index()), ("quadrant_counts_p", QP.reset_index()),
                            ("male_signature", SIG), ("class_tests", K if crows else pd.DataFrame()),
+                           ("female_region_areas", A),
+                           ("female_whole_adjusted", comp if comp is not None else pd.DataFrame()),
                            ("confidence_tiers", T1.rename_axis("tier").reset_index()),
                            ("annotation_sources", T2.rename_axis("source").reset_index()), ("atlas_evidence", T3),
                            ("lipid_set", L)]:
