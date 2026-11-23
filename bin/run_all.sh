@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="${1:-config.yaml}"
 FROM="${FROM:-00}"
-PHASES=(00 01 02 03 04 04b 05 06 07 08 09 09b 09c 10)
+PHASES=(00 01 02 03 04 04b 05 06 07 08 09 09b 09c 09d 10)
 
 started=0
 t0=$(date +%s)
