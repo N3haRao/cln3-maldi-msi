@@ -187,6 +187,17 @@ def main():
         ok = len(w) == 3 and w.agrees_with_corrected.astype(bool).all() and not w.agrees_with_flipJ.astype(bool).all()
         det = ", ".join(f"{r.slide} r={r.r_top_minus_bottom_vs_female_signature:+.2f}" for r in w.itertuples())
     check("09d male signature recovers the sheet labels (corrected agrees, flipJ does not)", ok, det)
+    # the region-adjusted whole section: observed part rebuilt from the regions equals 09's
+    # whole-section difference, and the planted lipid survives the adjustment
+    ok, det = False, "missing"
+    if (d9 / "female_whole_section_adjusted.csv").exists() and (d9 / "lipid_tests.csv").exists():
+        Ad = pd.read_csv(d9 / "female_whole_section_adjusted.csv")
+        W = T[(T.analysis == "female") & (T.unit == "whole_section")].merge(Ad, on="lipid")
+        dev = float((W.log2fc - W.log2fc_observed).abs().max())
+        h = Ad[Ad.lipid == "HexCer 42:2;O2"]
+        ok = dev < 1e-6 and len(h) == 1 and bool(h.significant_adjusted.iloc[0])
+        det = f"rebuild error {dev:.1e}, adjusted log2FC {h.log2fc_adjusted.iloc[0]:+.2f}" if len(h) else f"rebuild error {dev:.1e}"
+    check("09d region-area check: whole section rebuilt from regions; planted HexCer survives adjustment", ok, det)
 
     # provenance: every phase recorded, all with the same code and config
     from cln3msi import provenance
