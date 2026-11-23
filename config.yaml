@@ -409,6 +409,21 @@ design_checks:
   enabled: true
   pca_units: [whole_section, white_matter, cortex]
 
+# Females and males separately (phase 09d), decided 11/23/2026: the female pairs get a full
+# region-wise analysis of the quality-controlled lipids; the males are analysed under each
+# candidate labelling below (slides listed are swapped relative to the sample sheet), with a
+# molecular-signature check of which male section looks like the knockout. Paired only.
+by_sex:
+  enabled: true
+  regions: [whole_section, white_matter, corpus_callosum, cortex, hippocampus, thalamus]
+  lipid_modes: [lip_neg, lip_pos]        # the quality-controlled lipid set (one ion per lipid)
+  class_modes: [lip_neg, lip_pos, met_neg]
+  male_labelings:
+    corrected: []                        # the sample sheet as it is (I, J, K swapped by the records)
+    flipJ: [I, K]                        # only J swapped: I and K back as originally recorded
+  marker_features: [GPI, GPG]            # CLN3 markers shown next to the male signature scores
+  key_features: [HexCer, "Sulfatide / PE+PI+PS", GM3, "Hex2Cer / HexCer", GPI, GPG]
+
 # Lipizones (phase 09b): pixels grouped by their whole lipid profile, as in the Lipid Brain
 # Atlas, without genotype labels; then per-animal tests inside each lipizone (never per pixel).
 # Levels nest: each of the finest lipizones sits inside one lipizone of every coarser level.
