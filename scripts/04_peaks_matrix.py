@@ -107,8 +107,15 @@ def main():
         need = int(np.ceil(float(P["min_section_fraction"]) * n_sec))
         cons = cons[cons.n_sections >= need].sort_values("mz").reset_index(drop=True)
         log.info(f"{n_all} aligned features, {len(cons)} found in >= {need}/{n_sec} sections")
-        if len(cons) > int(P["max_peaks"]):
-            cons = cons.nlargest(int(P["max_peaks"]), "median_height").sort_values("mz").reset_index(drop=True)
+        cap = P.get("max_peaks")
+        if cap and len(cons) > int(cap):
+            S.warn(f"{len(cons)} peaks pass the filters; only the {int(cap)} strongest are kept (peaks.max_peaks). "
+                   "Weaker peaks, including real low-abundance lipids, are dropped. Set max_peaks: null to keep all.", log)
+            cons = cons.nlargest(int(cap), "median_height").sort_values("mz").reset_index(drop=True)
+        n_px = sum(int((np.load(ctx.out("processed", mode, "qc", f"sections_{s}.npz", mkdir=False))["pos_spec"] > 0).sum())
+                   for s in slides)
+        log.info(f"keeping {len(cons)} peaks ({'no cap' if not cap else f'cap {int(cap)}'}); pixels x peaks matrix "
+                 f"about {n_px * len(cons) * 4 / 1e9:.1f} GB in memory ({n_px} tissue pixels)")
         if cons.empty:
             S.warn("no peaks survived; lower peaks.snr or peaks.min_section_fraction", log)
             S.write()
