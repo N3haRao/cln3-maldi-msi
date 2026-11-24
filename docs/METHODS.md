@@ -103,7 +103,7 @@ writes tables, figures and a short summary. Phases 03 to 09 run separately for e
    all sections are grouped when they lie within the alignment tolerance.
 4. A consensus peak is kept if it was picked in at least half of the sections
    (`min_section_fraction` = 0.5) and is present in at least 1% of tissue pixels
-   (`min_pixel_fraction`). At most `max_peaks` = 4,000 peaks are kept, the strongest first.
+   (`min_pixel_fraction`). There is no cap on the number of peaks (`max_peaks: null`): every peak that passes these filters is kept, so weak but real lipids are not lost. (Until November 24, 2026 the 4,000 strongest were kept, and all three modes reached that cap.)
 5. Every kept peak is integrated in every tissue pixel (sum of intensities inside the peak
    window), giving a pixels × peaks matrix per mode. DAN matrix peaks are moved out of the
    matrix into separate columns, so they do not enter normalization or statistics. So are
