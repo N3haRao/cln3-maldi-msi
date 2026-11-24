@@ -190,8 +190,21 @@ Batch-corrected embeddings (for example Harmony) are used only for plots, never 
 Each section is aligned to the Allen Mouse Brain Common Coordinate Framework (25 µm, via
 brainglobe) with SimpleITK:
 
-1. **Guide image.** The strongest annotated sulfatide ion, which outlines white matter
-   sharply. An optical scan can be used instead when one is available.
+1. **Guide image.** A lipid image that outlines white matter. Sulfatides do this most sharply,
+   but they are lower in the knockout, so knockout sections had weaker contrast and fitted
+   worse (G_435 had the poorest internal fit of the 12 sections, and its atlas white matter
+   came out at half the share of every other section). Since November 23, 2026 the guide is
+   chosen to be genotype-neutral (`guide_ion: neutral`), without using genotype labels: among
+   the brightest quarter of the annotated peaks, those whose pixel image correlates with the
+   sulfatide image (r >= 0.5, within sections) and whose mean differs by no more than 0.2 log2
+   (about 15%) between the two sections of every slide; the one with the smallest such
+   difference is used. Candidates and their scores are in
+   `results/07_register/<mode>/guide_candidates.csv`. If none qualifies, the sulfatide is used.
+   A lipid name, an m/z or an optical scan can be given instead. On this data set the screen
+   found no non-sulfatide lipid with r >= 0.6 in negative mode; the best stable white-matter
+   lipid is PC 36:1 [M+K]+ in positive mode (r = 0.56, Top/Bottom within 13% on every slide,
+   against up to 39% for the sulfatide), so registration is done on positive mode with that ion,
+   named in the configuration.
 2. **Search.** Coronal atlas planes are tried across the expected anteroposterior range in
    0.1 mm steps, each from four starting rotations (0°, 90°, 180°, 270°).
 3. **Fit.** Similarity, then affine transform, with Mattes mutual information as the metric.
@@ -207,7 +220,7 @@ brainglobe) with SimpleITK:
 Warped atlas labels give each pixel an Allen structure. The regions used are white matter
 ("fiber tracts"), corpus callosum, isocortex, hippocampal formation and thalamus, each with all
 descendant structures. The three modes were exported on the same pixel grid, so the
-registration is done once (lipid negative mode, which has the sulfatide guide) and the same
+registration is done once (lipid positive mode, `registration.reuse_from`) and the same
 regions are applied to the other modes after checking that the pixels match.
 
 ### 3.6 Spatial exploration (phase 08)
