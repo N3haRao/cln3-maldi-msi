@@ -40,8 +40,11 @@ COMMON=(--parsable --export=ALL)
 [[ -n "$SLURM_QOS" ]] && COMMON+=(--qos="$SLURM_QOS")
 
 # time limit per phase (edit if a job gets killed for running out of time)
-declare -A TIME=([01]=01:00:00 [02]=01:00:00 [03]=08:00:00 [04]=06:00:00 [05]=00:30:00
-                 [06]=01:00:00 [07]=06:00:00 [08]=02:00:00 [09]=02:00:00 [09b]=02:00:00 [09c]=00:30:00 [09d]=00:30:00 [10]=00:30:00 [11]=00:30:00)
+declare -A TIME=([01]=01:00:00 [02]=01:00:00 [03]=08:00:00 [04]=10:00:00 [05]=01:00:00
+                 [06]=03:00:00 [07]=06:00:00 [08]=06:00:00 [09]=04:00:00 [09b]=04:00:00 [09c]=00:30:00 [09d]=00:30:00 [10]=00:30:00 [11]=00:30:00)
+# memory per phase: the phases that hold the whole pixels x peaks matrix get more (no peak cap
+# since 11/24/2026, see peaks.max_peaks). Everything else keeps the 32 GB of job_phase.sbatch.
+declare -A MEM=([04]=96G [05]=64G [06]=96G [07]=64G [08]=96G [09]=96G [09b]=96G)
 ORDER=(03 04 05 06 07 08 09 09b 09c)
 
 # phase string comparison: run phase P if P >= FROM
@@ -51,7 +54,7 @@ submit() {   # submit <phase> <mode or ""> <dependency job ids, colon separated 
   local phase=$1 mode=$2 dep=$3 extra=()
   [[ -n "$dep" ]] && extra+=(--dependency="afterok:$dep" --kill-on-invalid-dep=yes)
   PHASE="$phase" MODE="$mode" PHASE_ARGS="${PHASE_ARGS:-}" sbatch "${COMMON[@]}" ${extra[@]+"${extra[@]}"} \
-    --job-name="cln3${RUN:+_$RUN}_${phase}${mode:+_$mode}" --time="${TIME[$phase]}" \
+    --job-name="cln3${RUN:+_$RUN}_${phase}${mode:+_$mode}" --time="${TIME[$phase]}" ${MEM[$phase]:+--mem=${MEM[$phase]}} \
     --output="$LOGS/%x_%j.out" "$HERE/job_phase.sbatch"
 }
 
