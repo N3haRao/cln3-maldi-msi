@@ -279,7 +279,7 @@ Everything is driven from the Mac terminal by the scripts in `bin/hpc/`:
 | `start_on_hpc.sh` | Mac | ssh in, run `hpc_setup.sh`, then `submit_all.sh` |
 | `hpc_setup.sh` | cluster login node | conda (module, existing install, or Miniforge), env, unit tests, phase 00 + downloads |
 | `submit_all.sh` | cluster login node | submits 01 → 02, and per mode 03 → 09b → 09c as dependent jobs, then 09d (once, all modes) and 10 |
-| `job_phase.sbatch` | compute node | one phase (4 cores, 32 GB by default) |
+| `job_phase.sbatch` | compute node | one phase (4 cores, 32 GB by default; `submit_all.sh` asks for 64 to 96 GB for the phases that hold the whole peak matrix) |
 | `status.sh` / `fetch_results.sh` | Mac | queue + progress / copy summaries, figures, report back |
 | `archive_outputs.sh` | Mac | move a finished run's outputs aside on the cluster (cache stays) before a full rerun |
 
