@@ -228,3 +228,56 @@ def colorbar(fig, im, ax, label: str, **kw):
     cb.ax.tick_params(labelsize=6, width=0.6)
     cb.outline.set_linewidth(0.5)
     return cb
+
+
+def label_points(ax, x, y, labels, fontsize: float = 6.5, max_radius_pt: float = 60.0, drop: bool = True) -> list:
+    """Name points without overlapping labels (no extra package needed).
+
+    Each label is tried at offsets around its point, nearest first, in growing rings, and kept
+    at the first spot where its box overlaps no label placed before it, no other labelled point
+    and stays inside the axes. Labels moved away from their point get a thin leader line.
+    Labels are placed in the order given, so pass the most important first. A label that finds
+    no free spot within max_radius_pt is left out (drop=True) or kept at the nearest spot
+    (drop=False, for labels that must all be shown). Returns the text objects that were placed."""
+    fig = ax.figure
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    ax_box = ax.get_window_extent(rend)
+    to_px = ax.transData.transform
+    pts = to_px(np.column_stack([np.asarray(x, float), np.asarray(y, float)]))
+    taken, placed = [], []
+    dirs = [(1, 0.4), (1, -0.6), (-1, 0.4), (-1, -0.6), (0.2, 1), (0.2, -1.4), (1, 1), (-1, 1), (1, -1.4), (-1, -1.4)]
+    for i, (lab, (px, py)) in enumerate(zip(labels, pts)):
+        t = ax.annotate(str(lab), (x[i], y[i]), xytext=(4, 2), textcoords="offset points", fontsize=fontsize,
+                        zorder=5)
+        ok = False
+        for rad in np.arange(4, max_radius_pt + 1, 6):
+            for dx, dy in dirs:
+                ox, oy = dx * rad, dy * rad * 0.6
+                t.set_position((ox, oy))
+                t.set_horizontalalignment("left" if dx >= 0 else "right")
+                bb = t.get_window_extent(rend).expanded(1.05, 1.15)
+                inside = (bb.x0 >= ax_box.x0 and bb.x1 <= ax_box.x1 and bb.y0 >= ax_box.y0 and bb.y1 <= ax_box.y1)
+                if not inside or any(bb.overlaps(o) for o in taken):
+                    continue
+                others = np.delete(pts, i, axis=0) if len(pts) > 1 else np.empty((0, 2))
+                if len(others) and np.any((others[:, 0] >= bb.x0) & (others[:, 0] <= bb.x1)
+                                          & (others[:, 1] >= bb.y0) & (others[:, 1] <= bb.y1)):
+                    continue
+                ok = True
+                break
+            if ok:
+                break
+        if not ok and drop:
+            t.remove()
+            continue
+        if not ok:
+            rad = 4
+            t.set_position((4, 2))
+            t.set_horizontalalignment("left")
+        if rad > 6:
+            ax.annotate("", (x[i], y[i]), xytext=t.get_position(), textcoords="offset points",
+                        arrowprops=dict(arrowstyle="-", color="#777777", lw=0.5, shrinkA=0, shrinkB=1.5), zorder=4)
+        taken.append(t.get_window_extent(rend).expanded(1.05, 1.15))
+        placed.append(t)
+    return placed
