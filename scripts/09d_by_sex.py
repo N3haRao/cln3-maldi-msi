@@ -291,6 +291,7 @@ def volcano_grid(results, regions, title, fname, S, caption, alpha, label_n=8):
     nrow = int(np.ceil(n / ncol))
     fig, axes = plt.subplots(nrow, ncol, figsize=(4.3 * ncol, 3.9 * nrow), squeeze=False,
                              gridspec_kw={"hspace": 0.45, "wspace": 0.3})
+    to_label = []
     for ax, u in zip(axes.ravel(), regions):
         R = results[results.unit == u]
         y = -np.log10(R["p"].clip(lower=1e-300))
@@ -298,16 +299,17 @@ def volcano_grid(results, regions, title, fname, S, caption, alpha, label_n=8):
         col = np.where(~sig, "#C8C8C8", np.where(R["log2fc"] > 0, figstyle.MUTANT, figstyle.CONTROL))
         ax.scatter(R["log2fc"], y, s=14, c=col, edgecolors="none")
         ax.axvline(0, color="#999999", lw=0.5)
-        top = R[sig].nsmallest(label_n, "p")
-        for _, r in top.iterrows():
-            ax.annotate(r["lipid"], (r["log2fc"], -np.log10(max(r["p"], 1e-300))), fontsize=6, xytext=(3, 2),
-                        textcoords="offset points")
+        top = pd.concat([R[sig].nsmallest(label_n, "p"), R[sig].nlargest(2, "log2fc"), R[sig].nsmallest(2, "log2fc")])
+        top = top[~top.index.duplicated()]
+        to_label.append((ax, top["log2fc"].to_numpy(), -np.log10(top["p"].clip(lower=1e-300)).to_numpy(), top["lipid"].tolist()))
         ax.set_title(f"{figstyle.region_name(u)}  ({int(sig.sum())} at q < {alpha:g})")
         ax.set_xlabel("log2 fold change (KO / Control)")
         ax.set_ylabel("−log10 p")
     for ax in axes.ravel()[n:]:
         ax.set_visible(False)
     figstyle.title(fig, title)
+    for ax, xs, ys, labs in to_label:       # after the layout is fixed, so the boxes are final
+        figstyle.label_points(ax, xs, ys, labs)
     S.fig(fig, fname, caption=caption)
 
 
@@ -519,6 +521,7 @@ def main():
         for stat, nice in (("q", f"q < {alpha:g}"), ("p", f"nominal p < {alpha:g}")):
             fig, axes = plt.subplots(nrow, ncol, figsize=(4.3 * ncol, 4.1 * nrow), squeeze=False,
                                      gridspec_kw={"hspace": 0.45, "wspace": 0.3})
+            qlab = []
             for ax, u in zip(axes.ravel(), regions):
                 g = J[J.unit == u]
                 for c, col in CAT_COL.items():
@@ -529,8 +532,8 @@ def main():
                 ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)  # noqa: E702
                 ax.axhline(0, color="#999999", lw=0.5); ax.axvline(0, color="#999999", lw=0.5)  # noqa: E702
                 ax.plot([-lim, lim], [-lim, lim], color="#999999", lw=0.4, ls=":")
-                for _, r in g[g[f"cat_{stat}"].isin(["both, same direction", "both, opposite"])].nsmallest(6, f"p_f").iterrows():
-                    ax.annotate(r["lipid"], (r["log2fc_f"], r["log2fc_m"]), fontsize=6, xytext=(3, 2), textcoords="offset points")
+                lb = g[g[f"cat_{stat}"].isin(["both, same direction", "both, opposite"])].nsmallest(6, "p_f")
+                qlab.append((ax, lb["log2fc_f"].to_numpy(), lb["log2fc_m"].to_numpy(), lb["lipid"].tolist()))
                 ax.set_title(figstyle.region_name(u))
                 ax.set_xlabel("log2 FC, females")
                 ax.set_ylabel(f"log2 FC, males ({lab})")
@@ -538,6 +541,8 @@ def main():
             for ax in axes.ravel()[len(regions):]:
                 ax.set_visible(False)
             figstyle.title(fig, f"Females vs males ({lab} labels), significance at {nice}")
+            for ax_, xs, ys, labs in qlab:
+                figstyle.label_points(ax_, xs, ys, labs)
             S.fig(fig, f"quadrants_{lab}_{stat}.png", caption=(
                 f"Each point is one lipid: genotype effect in females (x) against males with the {lab} labelling (y). "
                 f"Colour, where the change is significant ({nice} in each sex's own paired test): magenta, both sexes in "
@@ -565,6 +570,7 @@ def main():
         nrow = int(np.ceil(len(regions) / ncol))
         fig, axes = plt.subplots(nrow, ncol, figsize=(4.6 * ncol, 4.3 * nrow), squeeze=False,
                                  gridspec_kw={"hspace": 0.45, "wspace": 0.32})
+        plab = []
         for ax, u in zip(axes.ravel(), regions):
             Lg = Lg_by_unit[u]
             keep = [a for a in Lg.index if a in info.index and (info.at[a, "sex"] == "Male" or info.at[a, "genotype"] == ctl or with_fko)]
@@ -581,11 +587,12 @@ def main():
                 ax.scatter(sc[i, 0], sc[i, 1], marker="o" if female else "s", s=46,
                            facecolors=fcol[r["genotype"]] if female else "white",
                            edgecolors=fcol[r["genotype"]], linewidths=1.6, zorder=3)
-                ax.annotate(r["short"], (sc[i, 0], sc[i, 1]), fontsize=7, xytext=(4, 3), textcoords="offset points")
                 pca_rows.append({"view": "with female KO" if with_fko else "female Controls + males", "unit": u,
                                  "section": r["short"], "sex": r["sex"], "genotype_in_sheet": r["genotype"],
                                  "position": r["position_on_slide"], "PC1": sc[i, 0], "PC2": sc[i, 1],
                                  "PC1_var": ve[0], "PC2_var": ve[1]})
+            ax.margins(0.18)
+            plab.append((ax, sc[:, 0], sc[:, 1], [info.at[a, "short"] for a in M.index]))
             ax.set_xlabel(f"PC1 ({100 * ve[0]:.0f}%)")
             ax.set_ylabel(f"PC2 ({100 * ve[1]:.0f}%)")
             ax.set_title(figstyle.region_name(u))
@@ -602,6 +609,8 @@ def main():
         figstyle.title(fig, "PCA of " + ("all female sections and the male sections" if with_fko else
                                          "the female Controls and the male sections"),
                        f"{len(L)} quality-controlled lipids, log2, z-scored; labels slide_animal")
+        for ax_, xs, ys, labs in plab:      # every section keeps its label
+            figstyle.label_points(ax_, xs, ys, labs, fontsize=7, drop=False)
         S.fig(fig, name, caption=(
             "Principal component analysis of per-section lipid profiles in each region. Circles, females (filled); squares, "
             "males (open), coloured by the genotype in the current sample sheet (blue Control, vermillion knockout). "
