@@ -101,9 +101,13 @@ peaks:
   recalibrate_per_slide: true        # shift each slide by its median calibrant ppm error (from 03)
   min_section_fraction: 0.5          # keep a peak if it is picked in at least this fraction of sections
   min_pixel_fraction: 0.01           # and present (>0) in at least this fraction of tissue pixels of those sections
-  max_peaks: 4000                    # safety cap, strongest peaks kept. Was 2000, which all three modes
-                                     # hit; the untargeted test family is limited separately
-                                     # (differential.untargeted_peaks), so more peaks don't dilute it
+  # No cap (null) since 11/24/2026: the 4,000 cap was reached in all three modes and, keeping the
+  # strongest peaks, dropped weak but real lipids (gangliosides and other low-abundance species).
+  # Every peak that passes snr, min_section_fraction and min_pixel_fraction is kept. Memory: about
+  # 1 GB per 1,000 peaks per copy of the matrix (~240k pixels); bin/hpc/submit_all.sh asks for
+  # 96 GB for the phases that hold it. The untargeted test family is limited separately
+  # (differential.untargeted_peaks), so more peaks don't dilute it. A number restores a cap.
+  max_peaks: null
   # Peaks that are as strong on the bare glass as on the tissue are matrix (DAN clusters and
   # adducts the known-ion list misses). Ratio = off-tissue / on-tissue mean signal in the peak's
   # window, median over slides. Such peaks are moved out of the matrix like the DAN ions.
