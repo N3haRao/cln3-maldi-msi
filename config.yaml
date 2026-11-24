@@ -193,13 +193,25 @@ registration:
   optical_tiffs: {E: null, F: null, G: null, I: null, J: null, K: null}
   tiff_um_per_px: null
   # Guide image per mode (used by the mode(s) that register themselves): auto = strongest
-  # annotated sulfatide, else HexCer, else the first principal component. Or give an m/z.
-  guide_ion: {lip_neg: auto, lip_pos: auto, met_neg: auto}
+  # annotated sulfatide, else HexCer, else the first principal component. neutral = a lipid
+  # that shows white matter like the sulfatide but differs little between the two sections of
+  # any slide (sulfatides are lower in the knockout, which made knockout sections fit worse;
+  # decided 11/23/2026). Or a lipid name ("PE 36:1") or an m/z.
+  # The neutral screen on the real data (11/24/2026) found no lipid other than the sulfatides with
+  # r >= 0.6; the best white-matter lipid that is stable within every slide is PC 36:1 [M+K]+ in
+  # positive mode (r 0.56 with the sulfatide, at most 13% Top/Bottom difference; the sulfatide
+  # guide differs by up to 39%). So registration is done on lip_pos with that ion, named here
+  # so the choice is fixed and visible.
+  guide_ion: {lip_neg: neutral, lip_pos: "PC 36:1 [M+K]+", met_neg: auto}
+  guide_neutral:
+    min_r: 0.5                       # pixel correlation with the sulfatide image (shows white matter)
+    max_slide_change_log2: 0.2       # largest |log2 Top/Bottom| over the slides (0.2 = about 15%)
+    min_brightness_quantile: 0.75    # only the brightest quarter of the annotated peaks
   # The three modes were exported on the SAME pixel grid per slide (identical pixel counts), so
-  # register once, on the mode with the clearest white-matter marker (sulfatides, lip_neg), and
-  # give the other modes the same per-pixel regions. 07 checks that the pixels really match
+  # register once, on the mode with the genotype-neutral guide (lip_pos, PC 36:1 [M+K]+; it was
+  # lip_neg with the sulfatide until 11/24/2026), and give the other modes the same per-pixel regions. 07 checks that the pixels really match
   # (>= 90%) and registers a mode on its own if they don't. null = register every mode separately.
-  reuse_from: lip_neg
+  reuse_from: lip_pos                # was lip_neg (sulfatide guide) until 11/24/2026
   bspline_grid_mm: 1.0
   bspline_iterations: 100
   min_dice: 0.80                     # sections below this fall back to lipid WM/GM masks only
