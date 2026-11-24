@@ -4,8 +4,12 @@
 
 Per mode and per section (12 per mode):
   * guide image: the optical TIFF if registration.optical_tiffs gives one for the slide,
-    otherwise a lipid image with clear anatomy (auto: strongest sulfatide, then HexCer,
-    then the first principal component of all lipid images)
+    otherwise a lipid image with clear anatomy. auto: strongest sulfatide, then HexCer, then
+    the first principal component. neutral: a lipid that shows white matter like the
+    sulfatide (pixel correlation) but differs little between the two sections of any slide
+    (no genotype labels used), so knockout and Control sections are registered on equal
+    terms; candidates in results/07_register/<mode>/guide_candidates.csv. Or a lipid name
+    (e.g. "PE 36:1") or an m/z.
   * search AP levels around Bregma -1.58 to -2.18 (+ a margin), affine, then B-spline
   * warp atlas labels onto the section -> per-pixel Allen structure
   * region masks from registration.regions (descendants included)
@@ -35,27 +39,114 @@ from cln3msi.images import scaled01, section_image  # noqa: E402
 from cln3msi.report import Summary, plt  # noqa: E402
 
 
-def choose_guide(a: ad.AnnData, how, log) -> tuple[np.ndarray, str]:
-    """Per-pixel guide values for the whole mode, plus a description."""
+def _sulfatide_guide(a: ad.AnnData):
+    """Index of the strongest annotated sulfatide (else HexCer), or None."""
     var = a.var
+    if "tag" not in var:
+        return None, None
+    ok = ~var.get("is_isotope", pd.Series(False, index=var.index)).fillna(False).astype(bool)
+    for tag in ("SHexCer", "HexCer"):
+        cand = var[ok & (var["tag"] == tag)]
+        if len(cand):
+            pid = cand["median_height"].idxmax()
+            return var.index.get_loc(pid), tag
+    return None, None
+
+
+def neutral_guide(a: ad.AnnData, opts: dict, log) -> tuple[int | None, pd.DataFrame]:
+    """A guide lipid that shows white matter like the sulfatide but does not differ between the
+    two sections of a slide, so knockout and Control sections are registered on equal terms.
+
+    Uses no genotype labels: for every bright, annotated, non-isotope peak,
+      anatomy   = Pearson r with the sulfatide image over all tissue pixels (log intensities,
+                  centred and scaled within each section, so slide offsets do not count)
+      top/bottom = per slide, |log2(mean Top / mean Bottom)| of the peak; the largest over slides
+    Kept: r >= min_r and largest top/bottom <= max_slide_change_log2; the one with the smallest
+    top/bottom difference wins (ties: higher r). Returns (column index or None, candidate table)."""
+    var, obs = a.var, a.obs
+    js, _ = _sulfatide_guide(a)
+    if js is None:
+        return None, pd.DataFrame()
+    iso = var.get("is_isotope", pd.Series(False, index=var.index)).fillna(False).astype(bool).to_numpy()
+    lab = var.get("annotation", var.get("label", pd.Series("", index=var.index))).fillna("").astype(str).to_numpy()
+    h = var["median_height"].to_numpy(float) if "median_height" in var else np.asarray(a.X.mean(0)).ravel()
+    q = float(opts.get("min_brightness_quantile", 0.75))
+    cand = np.flatnonzero(~iso & (lab != "") & (h >= np.nanquantile(h[~iso], q)))
+    cand = np.union1d(cand, [js])
+    X = np.asarray(a.X[:, cand], dtype=np.float64)
+    key = (obs["slide"].astype(str) + "|" + obs["section"].astype(str)).to_numpy()
+    rng = np.random.default_rng(0)
+    take = np.concatenate([rng.permutation(np.flatnonzero(key == k))[:4000] for k in np.unique(key)])
+    Z = np.log2(X[take] + 1e-3)
+    kk = key[take]
+    for k in np.unique(kk):
+        m = kk == k
+        Z[m] = (Z[m] - Z[m].mean(0)) / (Z[m].std(0) + 1e-9)
+    zs = Z[:, list(cand).index(js)]
+    r = (Z * zs[:, None]).mean(0) / (Z.std(0) * zs.std() + 1e-12)
+    tb = []
+    for sl in sorted(obs["slide"].astype(str).unique()):
+        t = (obs["slide"].astype(str) == sl).to_numpy() & (obs["section"].astype(str) == "Top").to_numpy()
+        b = (obs["slide"].astype(str) == sl).to_numpy() & (obs["section"].astype(str) == "Bottom").to_numpy()
+        if t.any() and b.any():
+            tb.append(np.abs(np.log2((X[t].mean(0) + 1e-9) / (X[b].mean(0) + 1e-9))))
+    tb = np.vstack(tb) if tb else np.zeros((1, len(cand)))
+    T = pd.DataFrame({"peak": var.index[cand], "label": var["label"].to_numpy()[cand] if "label" in var else lab[cand],
+                      "mz": var["mz"].to_numpy()[cand], "median_height": h[cand], "r_with_sulfatide": r,
+                      "max_top_bottom_log2": tb.max(0), "mean_top_bottom_log2": tb.mean(0)})
+    T["is_sulfatide_guide"] = T["peak"] == var.index[js]
+    min_r, max_d = float(opts.get("min_r", 0.6)), float(opts.get("max_slide_change_log2", 0.2))
+    T["eligible"] = (T.r_with_sulfatide >= min_r) & (T.max_top_bottom_log2 <= max_d) & ~T.is_sulfatide_guide
+    T = T.sort_values(["eligible", "max_top_bottom_log2", "r_with_sulfatide"], ascending=[False, True, False])
+    if not T["eligible"].any():
+        log.warning(f"no peak has r >= {min_r} with the sulfatide and a Top/Bottom difference <= {max_d} log2 on every slide")
+        return None, T.reset_index(drop=True)
+    return int(var.index.get_loc(T.iloc[0]["peak"])), T.reset_index(drop=True)
+
+
+def choose_guide(a: ad.AnnData, how, log, neutral_opts: dict | None = None) -> tuple[np.ndarray, str, pd.DataFrame]:
+    """Per-pixel guide values for the whole mode, a description and (for 'neutral') the
+    candidate table. how: auto (strongest sulfatide, then HexCer, then PC1), neutral (see
+    neutral_guide; falls back to auto), a lipid name or label (e.g. "PE 36:1"), or an m/z."""
+    var = a.var
+    none = pd.DataFrame()
+    if how == "neutral":
+        j, T = neutral_guide(a, neutral_opts or {}, log)
+        if j is not None:
+            r = T.iloc[0]
+            return (np.asarray(a.X[:, j]).ravel(),
+                    f"{var['label'].iloc[j] if 'label' in var else var.index[j]} (genotype-neutral: r = "
+                    f"{r.r_with_sulfatide:.2f} with the sulfatide, Top/Bottom within {100 * (2 ** r.max_top_bottom_log2 - 1):.0f}% on every slide)",
+                    T)
+        log.warning("no genotype-neutral guide found: using the sulfatide (auto)")
+        how, none = "auto", T
     if how not in (None, "auto"):
-        j = int(np.argmin(np.abs(var["mz"].to_numpy() - float(how))))
-        return np.asarray(a.X[:, j]).ravel(), f"m/z {var['mz'].iloc[j]:.4f} (from config)"
-    if "tag" in var:
-        ok = ~var.get("is_isotope", pd.Series(False, index=var.index)).fillna(False).astype(bool)
-        for tag in ("SHexCer", "HexCer"):
-            cand = var[ok & (var["tag"] == tag)]
-            if len(cand):
-                pid = cand["median_height"].idxmax()
-                j = var.index.get_loc(pid)
-                return np.asarray(a.X[:, j]).ravel(), f"{var.loc[pid, 'label']} (strongest {tag})"
+        try:
+            mz = float(how)
+        except (TypeError, ValueError):
+            mz = None
+        if mz is not None:
+            j = int(np.argmin(np.abs(var["mz"].to_numpy() - mz)))
+            return np.asarray(a.X[:, j]).ravel(), f"m/z {var['mz'].iloc[j]:.4f} (from config)", none
+        iso = var.get("is_isotope", pd.Series(False, index=var.index)).fillna(False).astype(bool)
+        names = [var.get(c, pd.Series("", index=var.index)).fillna("").astype(str) for c in ("annotation", "label")]
+        lab_clean = names[1].str.replace(r"\s*\*$", "", regex=True)
+        hit = iso.eq(False) & (names[0].eq(str(how)) | lab_clean.eq(str(how)) | names[1].str.startswith(str(how) + " "))
+        if not hit.any():
+            raise ValueError(f"registration.guide_ion: no non-isotope peak is named {how!r}")
+        pid = var.loc[hit, "median_height"].idxmax() if "median_height" in var else var.index[hit][0]
+        j = var.index.get_loc(pid)
+        return np.asarray(a.X[:, j]).ravel(), f"{var.loc[pid, 'label'] if 'label' in var else pid} (from config)", none
+    js, tag = _sulfatide_guide(a)
+    if js is not None:
+        return np.asarray(a.X[:, js]).ravel(), f"{var['label'].iloc[js]} (strongest {tag})", none
     Z = np.log2(np.asarray(a.X) + 1e-3)
     Z = (Z - Z.mean(0)) / (Z.std(0) + 1e-9)
     sub = np.random.default_rng(0).choice(len(Z), min(len(Z), 20000), replace=False)
     v = np.linalg.svd(Z[sub], full_matrices=False)[2][0]
     log.info("no sulfatide/HexCer annotated: guide = PC1 of all peaks")
     pc = Z @ v
-    return pc - pc.min(), "PC1 of all peaks (no sulfatide/HexCer annotated)"
+    return pc - pc.min(), "PC1 of all peaks (no sulfatide/HexCer annotated)", none
 
 
 def tiff_guide(ctx, slide: str, shape, log) -> np.ndarray | None:
@@ -188,6 +279,11 @@ def main():
             if not ids:
                 log.warning(f"region {name}: none of {R['regions'][name]} found in the atlas")
 
+    # the mode whose registration the others reuse must run first, or they would copy its regions
+    # from an earlier run
+    src0 = R.get("reuse_from")
+    if src0 in modes:
+        modes = [src0] + [m for m in modes if m != src0]
     for mode in modes:
         S = Summary(ctx, "07_register", mode, f"Registration and regions, {mode}")
         p = ctx.out("processed", mode, "matrix_norm.h5ad", mkdir=False)
@@ -199,8 +295,10 @@ def main():
         obs = a.obs
         guide_cfg = R.get("guide_ion", "auto")
         how = guide_cfg.get(mode, "auto") if isinstance(guide_cfg, dict) else guide_cfg
-        gvals, gdesc = choose_guide(a, how, log)
+        gvals, gdesc, gcand = choose_guide(a, how, log, R.get("guide_neutral") or {})
         log.info(f"{mode}: guide = {gdesc}")
+        if len(gcand):
+            gcand.round(4).to_csv(ctx.out("results", "07_register", mode, "guide_candidates.csv"), index=False)
         src = R.get("reuse_from")
         if src and src != mode and reuse_registration(ctx, log, S, mode, src, obs, gvals, gdesc, R):
             log.info(f"summary: {S.write()}")
@@ -333,6 +431,20 @@ def main():
         S.h("Settings")
         S.kv({"atlas": atlas.name if atlas is not None else "none (fallback WM/GM only)", "guide": gdesc,
               "min Dice to use atlas regions": R["min_dice"]})
+        if len(gcand):
+            S.h("Guide lipid: genotype-neutral choice")
+            S.p("The guide should show anatomy (white matter) the same way in knockout and Control sections, so "
+                "both are registered on equal terms. Candidates: bright annotated peaks. r, pixel correlation with the "
+                "strongest sulfatide (anatomy, within sections); Top/Bottom, the largest |log2 Top/Bottom| over the "
+                "slides (no genotype labels used). Kept if r >= "
+                f"{(R.get('guide_neutral') or {}).get('min_r', 0.6)} and Top/Bottom <= "
+                f"{(R.get('guide_neutral') or {}).get('max_slide_change_log2', 0.2)}; the smallest difference wins.")
+            S.table(gcand.head(15)[["label", "r_with_sulfatide", "max_top_bottom_log2", "mean_top_bottom_log2",
+                                    "eligible", "is_sulfatide_guide"]].round(3))
+            sg = gcand[gcand.is_sulfatide_guide]
+            if len(sg):
+                S.p(f"For comparison, the sulfatide guide: largest Top/Bottom difference "
+                    f"{sg.max_top_bottom_log2.iloc[0]:.2f} log2.")
         S.h("Per section")
         S.table(reg.round(3))
         if atlas is not None and "used" in reg:
